@@ -1,85 +1,96 @@
-# Hospital Billing API (DRF + Google Sheets)
+# Shree Bal Rugnalaya — Hospital Management System
 
-This is a simple Django REST Framework app for entering in-patient bill details and saving them to:
+Full-stack billing system with IPD/OPD support, Google Sheets sync, and service rate configuration.
 
-1. Local Django DB (`sqlite3`) for API records.
-2. Google Spreadsheet (used as remote data store).
+## 🌐 Live Deployment
 
-## What this API stores
+- **Frontend**: https://storage.googleapis.com/shree-hms-frontend/index.html
+- **Backend API**: https://shree-hms-750926008347.asia-south1.run.app
+- **Google Sheet (IPD)**: Tab `IPD` in [spreadsheet](https://docs.google.com/spreadsheets/d/1xVCBLJCrJZFVkyIwe6XpqY9SWM66es0J9McdWT-CBY8)
+- **Google Sheet (OPD)**: Tab `OPD` in [spreadsheet](https://docs.google.com/spreadsheets/d/1xVCBLJCrJZFVkyIwe6XpqY9SWM66es0J9McdWT-CBY8/edit#gid=444430599)
 
-Based on your bill form image, each bill captures:
+## 🔑 Login Credentials
 
-- Patient details: name, address, IPD number
-- Admission details: admitted/discharged dates, room no, ward, total stay
-- Billing lines (`line_items`): charge type, charge/day, days, computed amount
-- Totals: total bill, advance, net bill
+| User | Username | Password |
+|------|----------|----------|
+| Reception | `reception` | `reception@123` |
+| Doctor | `doctor` | `doctor@123` |
 
-## Quick setup
+## 🚀 Quick Start
 
-1. Create and activate a Python virtual environment.
-2. Install dependencies:
+### Access the deployed app
+Just open: **https://storage.googleapis.com/shree-hms-frontend/index.html**
 
-   - `pip install -r requirements.txt`
+### Run locally
+```bash
+# Backend
+cd backend
+python -m venv ../.venv
+source ../.venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py seed_rates
+python manage.py runserver
 
-3. Create `.env` file from `.env.example` and fill values.
-4. Run migrations:
-
-   - `python manage.py migrate`
-
-5. Start server:
-
-   - `python manage.py runserver`
-
-## Google Sheets setup
-
-> Important: Public sheet visibility is not enough for write access.
-> For appending rows, use a **Google service account** and share the sheet with the service account email as **Editor**.
-
-1. Create a Google Cloud project.
-2. Enable **Google Sheets API**.
-3. Create a service account and download JSON key.
-4. Put key file path in `.env` as `GOOGLE_SERVICE_ACCOUNT_FILE`.
-5. Put spreadsheet ID in `.env` as `GOOGLE_SHEETS_SPREADSHEET_ID`.
-6. Share your target spreadsheet with service account email (Editor role).
-
-## API endpoint
-
-- `POST /api/bills/` → create bill, compute totals, append to Google Sheet
-- `GET /api/bills/` → list bills saved in local DB
-
-### Authentication
-
-All `/api/bills/` requests require **HTTP Basic Authentication**.
-
-Fixed users configured:
-
-- `reception` / `reception@123`
-- `doctor` / `doctor@123`
-
-## Sample request body
-
-```json
-{
-  "patient_name": "John Doe",
-  "address": "Ambad",
-  "ipd_no": "IPD-101",
-  "admitted_on": "2026-06-18",
-  "discharged_on": "2026-06-20",
-  "room_no": "12",
-  "ward": "General",
-  "total_stay": 2,
-  "advance_paid": "500.00",
-  "line_items": [
-    {"name": "Room Charges", "rate_per_day": "2500", "days": 2},
-    {"name": "I.P.D Charges", "rate_per_day": "1400", "days": 2},
-    {"name": "Monitoring", "rate_per_day": "100", "days": 2},
-    {"name": "Neocan", "rate_per_day": "300", "days": 1}
-  ]
-}
+# Frontend (separate terminal)
+cd frontend
+npm install
+npm run dev  # Opens on http://localhost:5173
 ```
 
-## Notes
+## 📦 Features
 
-- `amount` per line is computed as `rate_per_day * days`.
-- `total_bill` is sum of line amounts.
-- `net_bill = total_bill - advance_paid`.
+- **IPD/OPD Bill Types** — Separate workflows for in-patient & out-patient billing
+- **Auto-increment Bill Numbers** — IPD no (1,2,3...) and OPD no (1,2,3...) auto-assigned
+- **Discount Support** — Doctor can add discount with optional note
+- **Google Sheets Sync** — Bills auto-saved to IPD/OPD tabs on creation
+- **Service Rate Management** — Configure default rates by category
+- **Print Bills** — Clean print layout for both IPD and OPD
+- **Search & Filter** — By patient name, bill number, bill type
+
+## 📤 Deployment
+
+### Frontend
+```bash
+./deploy-frontend.sh
+```
+
+### Backend
+```bash
+cd backend
+gcloud builds submit --project=shree-500106 \
+  --tag=asia-south1-docker.pkg.dev/shree-500106/shree/shree-hms:latest .
+gcloud run deploy shree-hms --image=...latest --region=asia-south1 --quiet
+```
+
+## 📊 Tech Stack
+
+**Backend**: Django 5.1 + DRF + PostgreSQL 15 + Google Sheets API + Cloud Run  
+**Frontend**: React 18 + Vite 5 + Tailwind CSS 3 + Cloud Storage
+
+## 📝 API Documentation
+
+All endpoints require Basic Auth.
+
+### Bills
+- `GET /api/bills/` — List all
+- `POST /api/bills/` — Create (auto-assigns ipd_no or opd_no)
+- `PATCH /api/bills/:id/` — Update
+- `DELETE /api/bills/:id/` — Delete
+
+### Service Rates
+- `GET /api/rates/?category=OPD&is_active=true` — List (filterable)
+- `POST /api/rates/` — Create
+- `PATCH /api/rates/:id/` — Update
+- `DELETE /api/rates/:id/` — Delete
+
+## 🧪 Testing
+
+```bash
+cd backend
+python manage.py test billing -v 2  # 25 tests
+```
+
+## 📞 Support
+
+For Shree Bal Rugnalaya, Ambad, Jalna.
