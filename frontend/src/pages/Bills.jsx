@@ -96,6 +96,16 @@ export default function Bills({ onTabChange }) {
     }
   }
 
+  const handlePaymentChange = async (billId, updates) => {
+    try {
+      const { data } = await apiClient.patch(`/bills/${billId}/payment/`, updates)
+      // Patch the local results array so the card re-renders immediately
+      setResults((prev) => prev.map((b) => (b.id === billId ? data : b)))
+    } catch {
+      showToast('⚠ Failed to update payment status.', 'error')
+    }
+  }
+
   const handlePrint = (bill) => {
     const fDate = (d) =>
       d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
@@ -133,6 +143,11 @@ export default function Bills({ onTabChange }) {
       ? `<tr><td>Discount${bill.discount_note ? ` (${bill.discount_note})` : ''}</td><td style="text-align:right">– ${fAmt(bill.discount)}</td></tr>`
       : ''
 
+    const paidViaLabel = { CASH: 'Cash', UPI: 'UPI', ONLINE: 'Online' }[bill.paid_via] || bill.paid_via || '—'
+    const paymentRow = bill.payment_status === 'PAID'
+      ? `<tr><td>Payment</td><td style="text-align:right;color:#15803d">✓ Paid via ${paidViaLabel}</td></tr>`
+      : `<tr><td>Payment</td><td style="text-align:right;color:#c2410c">⏳ Unpaid</td></tr>`
+
     const html = `<!DOCTYPE html><html><head><title>Bill – ${bill.patient_name}</title><style>
       body{font-family:Arial,sans-serif;max-width:780px;margin:40px auto;padding:0 24px;color:#222}
       .hdr{text-align:center;border-bottom:2px solid #222;padding-bottom:10px;margin-bottom:18px}
@@ -163,6 +178,7 @@ export default function Bills({ onTabChange }) {
         ${parseFloat(bill.advance_paid) > 0 ? `<tr><td>Less Advance</td><td style="text-align:right">– ${fAmt(bill.advance_paid)}</td></tr>` : ''}
         ${discountRow}
         <tr class="net"><td>Net Payable</td><td style="text-align:right">${fAmt(bill.net_bill)}</td></tr>
+        ${paymentRow}
       </table>
       <div class="foot"><div>Date: ${fDate(new Date().toISOString())}</div>
         <div>Authorised Signature: ___________________</div></div>
@@ -271,6 +287,7 @@ export default function Bills({ onTabChange }) {
               onPrint={handlePrint}
               onEdit={(b) => setEditBill(b)}
               onDelete={(b) => setConfirmDelete(b)}
+              onPaymentChange={handlePaymentChange}
             />
           ))
         )}

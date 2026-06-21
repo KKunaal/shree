@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 
 from .authentication import FixedBasicAuthentication
 from .models import Bill, Metrics, ServiceRate
-from .serializers import BillSerializer, ServiceRateSerializer
+from .serializers import BillPaymentSerializer, BillSerializer, ServiceRateSerializer
 
 _auth = {
     "authentication_classes": [FixedBasicAuthentication],
@@ -150,3 +150,28 @@ class MetricsAPIView(APIView):
             "as_of":             today.isoformat(),
             "metrics_updated_at": m.updated_at,
         })
+
+
+class BillPaymentAPIView(APIView):
+    """
+    PATCH /api/bills/<id>/payment/
+
+    Update only payment_status and/or paid_via for a single bill.
+    Returns the full updated bill so the frontend can refresh its local state
+    in a single round-trip.
+
+    Body (all fields optional):
+        { "payment_status": "PAID" | "UNPAID",
+          "paid_via":       "CASH" | "UPI" | "ONLINE" }
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        from django.shortcuts import get_object_or_404
+        bill = get_object_or_404(Bill, pk=pk)
+        payment_ser = BillPaymentSerializer(bill, data=request.data, partial=True)
+        payment_ser.is_valid(raise_exception=True)
+        payment_ser.save()
+        # Return the full bill so the frontend can update its state directly
+        return Response(BillSerializer(bill).data)

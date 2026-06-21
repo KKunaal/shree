@@ -40,6 +40,7 @@ class BillSerializer(serializers.ModelSerializer):
             "patient_name", "address", "mobile_no", "gender", "weight",
             "line_items",
             "total_bill", "advance_paid", "discount", "discount_note", "net_bill",
+            "payment_status", "paid_via",
             "remote_row_ref", "created_at",
         ]
         read_only_fields = (
@@ -181,3 +182,15 @@ class BillSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+class BillPaymentSerializer(serializers.ModelSerializer):
+    """
+    Lightweight serializer for the dedicated payment endpoint.
+    Only `payment_status` and `paid_via` are writable; everything else is
+    returned read-only so the frontend can update its local state in one call.
+    """
+
+    class Meta:
+        model = Bill
+        fields = ["id", "payment_status", "paid_via"]

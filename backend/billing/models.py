@@ -82,6 +82,23 @@ class Bill(models.Model):
     discount_note = models.TextField(blank=True)
     net_bill = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 
+    # ── Payment ───────────────────────────────────────────────────────────────
+    class PaymentStatus(models.TextChoices):
+        UNPAID = "UNPAID", "Unpaid"
+        PAID   = "PAID",   "Paid"
+
+    class PaidVia(models.TextChoices):
+        CASH   = "CASH",   "Cash"
+        UPI    = "UPI",    "UPI"
+        ONLINE = "ONLINE", "Online"
+
+    payment_status = models.CharField(
+        max_length=10, choices=PaymentStatus.choices, default=PaymentStatus.UNPAID
+    )
+    paid_via = models.CharField(
+        max_length=10, choices=PaidVia.choices, default=PaidVia.UPI
+    )
+
     remote_row_ref = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

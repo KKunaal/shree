@@ -8,12 +8,16 @@ const fmtDate = (d) =>
     ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—'
 
-export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
+const PAID_VIA_LABELS = { CASH: '💵 Cash', UPI: '📲 UPI', ONLINE: '🌐 Online' }
+
+export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentChange }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [paymentSaving, setPaymentSaving] = useState(false)
   const menuRef = useRef(null)
 
   const isOPD = bill.bill_type === 'OPD'
+  const isPaid = bill.payment_status === 'PAID'
   const hasAdvance = parseFloat(bill.advance_paid) > 0
   const hasDiscount = parseFloat(bill.discount) > 0
   const accentText = isOPD ? 'text-green-700' : 'text-blue-700'
@@ -29,19 +33,44 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [menuOpen])
 
+  const savePayment = async (updates) => {
+    if (paymentSaving || !onPaymentChange) return
+    setPaymentSaving(true)
+    try {
+      await onPaymentChange(bill.id, updates)
+    } finally {
+      setPaymentSaving(false)
+    }
+  }
+
+  const toggleStatus = (e) => {
+    e.stopPropagation()
+    savePayment({ payment_status: isPaid ? 'UNPAID' : 'PAID', paid_via: bill.paid_via })
+  }
+
+  const changePaidVia = (e) => {
+    e.stopPropagation()
+    savePayment({ payment_status: bill.payment_status, paid_via: e.target.value })
+  }
+
   return (
     <div
       className="bg-white rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
       onClick={() => setExpanded((e) => !e)}
     >
       {/* Summary row */}
-      <div className="flex items-start justify-between px-4 py-4 gap-3">
+      <div className="flex items-start justify-between px-4 pt-4 pb-2 gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold text-gray-800">{bill.patient_name}</h3>
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0
               ${isOPD ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
               {isOPD ? '🩺 OPD' : '🏥 IPD'}
+            </span>
+            {/* Payment status badge */}
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0
+              ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+              {isPaid ? '✓ Paid' : '⏳ Unpaid'}
             </span>
             {bill.remote_row_ref && (
               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">
@@ -100,7 +129,7 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
               className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition text-xl leading-none"
             >⋮</button>
             {menuOpen && (
-              <div className="absolute right-0 top-9 bg-white border border-gray-200 rounded-xl shadow-xl z-30 min-w-[144px] py-1">
+              <div className="absolute right-0 top-9 bg-white border border-gray-200 rounded-xl shadow-xl z-30 min-w-[160px] py-1">
                 <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onPrint?.(bill) }}
                   className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
                   🖨️ Print
@@ -118,6 +147,50 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── Payment bar (always visible) ─────────────────────────────────── */}
+      <div
+        className="flex items-center gap-2 px-4 pb-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Status toggle */}
+        <button
+          disabled={paymentSaving}
+          onClick={toggleStatus}
+          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition active:scale-95 disabled:opacity-60
+            ${isPaid
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+              : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100'
+            }`}
+        >
+          {paymentSaving ? (
+            <span className="animate-spin text-base leading-none">⏳</span>
+          ) : isPaid ? (
+            <><span>✓</span> Paid — tap to undo</>
+          ) : (
+            <><span>○</span> Mark as Paid</>
+          )}
+        </button>
+
+        {/* Payment method */}
+        <select
+          value={bill.paid_via || 'UPI'}
+          disabled={paymentSaving}
+          onClick={(e) => e.stopPropagation()}
+          onChange={changePaidVia}
+          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-60"
+        >
+          <option value="UPI">📲 UPI</option>
+          <option value="CASH">💵 Cash</option>
+          <option value="ONLINE">🌐 Online</option>
+        </select>
+
+        {isPaid && (
+          <span className="text-[10px] text-gray-400 ml-auto">
+            via {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
+          </span>
+        )}
       </div>
 
       {/* Expanded detail */}
@@ -176,3 +249,4 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
     </div>
   )
 }
+
