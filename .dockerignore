@@ -1,0 +1,36 @@
+# Secrets — must never enter the image
+.env
+*.json
+
+# Python runtime artefacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# SQLite database (use the /data volume instead)
+db.sqlite3
+*.sqlite3
+
+# Logs
+*.log
+
+# Git & editor
+.git/
+.gitignore
+.vscode/
+
+# Docker files themselves (no need to copy)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# macOS
+.DS_Store

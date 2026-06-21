@@ -10,7 +10,9 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-default-key")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = ["*"]
+# Accept comma-separated hosts from env, e.g. "example.com,www.example.com"
+_raw_hosts = os.getenv("DJANGO_ALLOWED_HOSTS", "*")
+ALLOWED_HOSTS = [h.strip() for h in _raw_hosts.split(",") if h.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -56,7 +58,8 @@ ASGI_APPLICATION = "hms.asgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        # DATABASE_URL env var lets Docker redirect DB to a mounted volume (/data/db.sqlite3)
+        "NAME": os.getenv("DATABASE_URL", str(BASE_DIR / "db.sqlite3")),
     }
 }
 

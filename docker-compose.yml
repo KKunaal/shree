@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    image: shree-hms:latest
+    container_name: shree_hms
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
+    # Runtime environment — real values come from .env (never baked into image)
+    env_file:
+      - .env
+
+    # Mount SQLite data directory and service-account JSON as read-only
+    volumes:
+      - sqlite_data:/data
+      # The service-account JSON is mounted read-only from your host path.
+      # Path on host is read from GOOGLE_SERVICE_ACCOUNT_FILE in .env.
+      # We bind-mount the parent directory so the container path stays consistent.
+      - type: bind
+        source: ${GOOGLE_SERVICE_ACCOUNT_FILE}
+        target: /secrets/service-account.json
+        read_only: true
+
+    environment:
+      # Override the path so Django looks in /secrets/ inside the container
+      GOOGLE_SERVICE_ACCOUNT_FILE: /secrets/service-account.json
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/bills/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  sqlite_data:
