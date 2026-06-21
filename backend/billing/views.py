@@ -1,10 +1,15 @@
-from django.db.models import Q
+from decimal import Decimal
+
+from django.db.models import Q, Sum
+from django.utils import timezone
 from rest_framework import generics
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .authentication import FixedBasicAuthentication
-from .models import Bill, ServiceRate
+from .models import Bill, Metrics, ServiceRate
 from .serializers import BillSerializer, ServiceRateSerializer
 
 _auth = {
@@ -110,3 +115,38 @@ class BillDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated]
 
+
+class MetricsAPIView(APIView):
+    """
+    GET /api/metrics/
+
+    Returns two groups of metrics:
+    • Cumulative (all-time): read from the Metrics singleton table, which is
+      kept in sync by post_save / post_delete signals on Bill.
+    • Today: computed on-the-fly from the Bills table filtered by today's date.
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        today = timezone.localdate()
+        m = Metrics.instance()
+
+        today_qs = Bill.objects.filter(created_at__date=today)
+        today_ipd = today_qs.filter(bill_type="IPD").count()
+        today_opd = today_qs.filter(bill_type="OPD").count()
+        today_collected = today_qs.aggregate(s=Sum("net_bill"))["s"] or Decimal("0.00")
+
+        return Response({
+            # ── cumulative (from Metrics table) ──────────────────────────────
+            "total_ipd_bills":   m.total_ipd_bills,
+            "total_opd_bills":   m.total_opd_bills,
+            "total_collected":   str(m.total_collected),
+            # ── today (live from Bills table) ────────────────────────────────
+            "today_ipd_bills":   today_ipd,
+            "today_opd_bills":   today_opd,
+            "today_collected":   str(today_collected),
+            # ── meta ─────────────────────────────────────────────────────────
+            "as_of":             today.isoformat(),
+            "metrics_updated_at": m.updated_at,
+        })

@@ -116,6 +116,12 @@ export default function Charges({ onTabChange }) {
       <div className="bg-white border-b sticky top-[60px] z-30">
         <div className="max-w-2xl mx-auto flex">
           <button
+            onClick={() => onTabChange('dashboard')}
+            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            📊 Dashboard
+          </button>
+          <button
             onClick={() => onTabChange('bills')}
             className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
           >

@@ -87,3 +87,44 @@ class Bill(models.Model):
         if self.bill_type == "OPD":
             return f"{self.patient_name} (OPD #{self.opd_no})"
         return f"{self.patient_name} (IPD #{self.ipd_no})"
+
+
+class Metrics(models.Model):
+    """
+    Singleton table (pk always = 1).
+    Stores cumulative billing metrics; kept in sync via post_save / post_delete
+    signals on Bill.  Use Metrics.rebuild() to resync from the Bills table.
+    """
+
+    total_ipd_bills = models.PositiveIntegerField(default=0)
+    total_opd_bills = models.PositiveIntegerField(default=0)
+    total_collected = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "metrics"
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    @classmethod
+    def instance(cls):
+        """Return the single metrics row, creating it (with zeros) if absent."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    @classmethod
+    def rebuild(cls):
+        """Recompute every cumulative field from the Bills table. Idempotent."""
+        from django.db.models import Sum
+
+        ipd = Bill.objects.filter(bill_type="IPD").count()
+        opd = Bill.objects.filter(bill_type="OPD").count()
+        total = Bill.objects.aggregate(s=Sum("net_bill"))["s"] or Decimal("0.00")
+        obj = cls.instance()
+        obj.total_ipd_bills = ipd
+        obj.total_opd_bills = opd
+        obj.total_collected = total
+        obj.save()
+        return obj

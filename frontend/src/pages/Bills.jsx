@@ -184,6 +184,12 @@ export default function Bills({ onTabChange }) {
       {/* Tab bar */}
       <div className="bg-white border-b sticky top-[60px] z-30">
         <div className="max-w-2xl mx-auto flex">
+          <button
+            onClick={() => onTabChange('dashboard')}
+            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            📊 Dashboard
+          </button>
           <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             📋 Bills
             {(summary.ipd + summary.opd) > 0 && (

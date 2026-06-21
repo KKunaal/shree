@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     BillDetailAPIView,
     BillListCreateAPIView,
+    MetricsAPIView,
     ServiceRateDetailAPIView,
     ServiceRateListCreateAPIView,
 )
@@ -14,4 +15,6 @@ urlpatterns = [
     # ── Service Rates ─────────────────────────────────────────────────────────
     path("rates/", ServiceRateListCreateAPIView.as_view(), name="rate-list-create"),
     path("rates/<int:pk>/", ServiceRateDetailAPIView.as_view(), name="rate-detail"),
+    # ── Metrics ───────────────────────────────────────────────────────────────
+    path("metrics/", MetricsAPIView.as_view(), name="metrics"),
 ]
