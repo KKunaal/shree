@@ -1,0 +1,66 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: shree-hms
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Cloud SQL socket connection
+        run.googleapis.com/cloudsql-instances: shree-500106:asia-south1:shree-db
+        # Scale to zero when idle (cost savings)
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: asia-south1-docker.pkg.dev/shree-500106/shree/shree-hms:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: DJANGO_DEBUG
+              value: "False"
+            - name: DJANGO_ALLOWED_HOSTS
+              value: "*"
+            - name: GOOGLE_SERVICE_ACCOUNT_FILE
+              value: /secrets/sa.json
+            # ── secrets pulled from Secret Manager ──────────────────────────
+            - name: DJANGO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: DJANGO_SECRET_KEY
+                  key: latest
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: GOOGLE_SHEETS_SPREADSHEET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: GOOGLE_SHEETS_SPREADSHEET_ID
+                  key: latest
+            - name: GOOGLE_SHEETS_WORKSHEET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: GOOGLE_SHEETS_WORKSHEET_NAME
+                  key: latest
+          # ── service-account JSON mounted as a file ───────────────────────
+          volumeMounts:
+            - name: sa-secret
+              mountPath: /secrets
+              readOnly: true
+      volumes:
+        - name: sa-secret
+          secret:
+            secretName: GOOGLE_SERVICE_ACCOUNT_JSON
+            items:
+              - key: latest
+                path: sa.json

@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import dj_database_url
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,11 +57,13 @@ WSGI_APPLICATION = "hms.wsgi.application"
 ASGI_APPLICATION = "hms.asgi.application"
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        # DATABASE_URL env var lets Docker redirect DB to a mounted volume (/data/db.sqlite3)
-        "NAME": os.getenv("DATABASE_URL", str(BASE_DIR / "db.sqlite3")),
-    }
+    "default": dj_database_url.config(
+        # Cloud SQL (postgres): postgresql://user:pass@/dbname?host=/cloudsql/PROJECT:REGION:INSTANCE
+        # Local SQLite fallback:
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 AUTH_PASSWORD_VALIDATORS = []
@@ -71,6 +74,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Google Sheets configuration

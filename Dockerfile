@@ -3,7 +3,7 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install build tools (needed by some Google libs)
+# gcc needed by some google libs
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && \
     rm -rf /var/lib/apt/lists/*
 
@@ -15,26 +15,25 @@ RUN pip install --upgrade pip && \
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DJANGO_SETTINGS_MODULE=hms.settings
-
-WORKDIR /app
-
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
 # Copy application source
 COPY . .
 
-# Create a non-root user and a writable data dir for SQLite
+# Create non-root user + writable dirs for SQLite (local) and static files
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser && \
-    mkdir -p /data && chown appuser:appgroup /data
+    mkdir -p /data /app/staticfiles && chown -R appuser:appgroup /data /app/staticfiles
 
-# Point SQLite DB to the /data volume (overridable via env)
-ENV DATABASE_URL=/data/db.sqlite3
+# Collect static files (uses a dummy key — no DB needed at build time)
+RUN DJANGO_SECRET_KEY=build-time-only \
+    DJANGO_DEBUG=False \
+    DATABASE_URL=sqlite:////tmp/build.db \
+    GOOGLE_SHEETS_SPREADSHEET_ID=x \
+    GOOGLE_SHEETS_WORKSHEET_NAME=x \
+    GOOGLE_SERVICE_ACCOUNT_FILE=/dev/null \
+    python manage.py collectstatic --noinput
 
-# Ensure entrypoint is executable
 RUN chmod +x docker-entrypoint.sh
 
 USER appuser

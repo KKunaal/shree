@@ -4,3 +4,8 @@ google-api-python-client==2.149.0
 google-auth==2.35.0
 python-dotenv==1.0.1
 gunicorn==22.0.0
+# PostgreSQL driver — psycopg3 (supports Python 3.12+)
+psycopg[binary]==3.2.10
+# Parses DATABASE_URL into Django DATABASES dict
+dj-database-url==2.2.0
+

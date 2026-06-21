@@ -1,0 +1,36 @@
+steps:
+  # Build the container image
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:$COMMIT_SHA
+      - -t
+      - asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:latest
+      - .
+
+  # Push both tags
+  - name: gcr.io/cloud-builders/docker
+    args: [push, asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:$COMMIT_SHA]
+
+  - name: gcr.io/cloud-builders/docker
+    args: [push, asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:latest]
+
+  # Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - shree-hms
+      - --image=asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:$COMMIT_SHA
+      - --region=asia-south1
+      - --platform=managed
+      - --quiet
+
+images:
+  - asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:$COMMIT_SHA
+  - asia-south1-docker.pkg.dev/$PROJECT_ID/shree/shree-hms:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
