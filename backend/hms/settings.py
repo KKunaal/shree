@@ -89,6 +89,8 @@ GOOGLE_SHEETS_OPD_SPREADSHEET_ID = os.getenv(
 )
 GOOGLE_SHEETS_OPD_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_OPD_WORKSHEET_NAME", "OPD")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")
+# For Cloud Run: use JSON content from secret instead of file path
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 
 # Fixed basic auth users for API access
 FIXED_BASIC_AUTH_USERS = {

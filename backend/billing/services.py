@@ -29,7 +29,6 @@ class GoogleSheetsService:
 
     def __init__(self, bill_type: str = "IPD") -> None:
         self.bill_type = bill_type
-        self.credentials_file = settings.GOOGLE_SERVICE_ACCOUNT_FILE
 
         if bill_type == "OPD":
             self.spreadsheet_id = settings.GOOGLE_SHEETS_OPD_SPREADSHEET_ID
@@ -47,13 +46,24 @@ class GoogleSheetsService:
             raise ValueError(
                 f"GOOGLE_SHEETS_{'OPD_' if self.bill_type == 'OPD' else ''}SPREADSHEET_ID is not configured"
             )
-        if not self.credentials_file:
-            raise ValueError("GOOGLE_SERVICE_ACCOUNT_FILE is not configured")
 
-        credentials = Credentials.from_service_account_file(
-            self.credentials_file,
-            scopes=self.SCOPES,
-        )
+        # Support both file path and JSON content
+        service_account_file = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', None)
+        service_account_json = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_JSON', None)
+
+        if service_account_file:
+            # Use file path (local dev)
+            credentials = Credentials.from_service_account_file(
+                service_account_file,
+                scopes=self.SCOPES,
+            )
+        elif service_account_json:
+            # Use JSON content (Cloud Run)
+            info = json.loads(service_account_json)
+            credentials = Credentials.from_service_account_info(info, scopes=self.SCOPES)
+        else:
+            raise ValueError("Neither GOOGLE_SERVICE_ACCOUNT_FILE nor GOOGLE_SERVICE_ACCOUNT_JSON is configured")
+
         return build("sheets", "v4", credentials=credentials)
 
     def append_bill_row(self, bill) -> str:
