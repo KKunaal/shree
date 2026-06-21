@@ -117,17 +117,42 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
     setError('')
     setLoading(true)
     try {
-      const payload = {
+      // Helper: turn '' into null for date fields
+      const dateOrNull = (v) => v || null
+
+      const base = {
         bill_type: billType,
-        ...form,
-        total_stay: parseInt(form.total_stay) || 0,
+        patient_name: form.patient_name,
+        address: form.address,
+        advance_paid: form.advance_paid,
         discount: form.discount !== '' ? form.discount : null,
+        discount_note: form.discount_note,
         line_items: lineItems.map((i) => ({
           name: i.name,
           rate_per_day: i.rate_per_day,
           days: parseInt(i.days) || 0,
         })),
       }
+
+      const payload = billType === 'OPD'
+        ? {
+            ...base,
+            visit_date:     dateOrNull(form.visit_date),
+            // explicitly null out IPD fields so they don't drift
+            admitted_on:    null,
+            discharged_on:  null,
+          }
+        : {
+            ...base,
+            admitted_on:    dateOrNull(form.admitted_on),
+            discharged_on:  dateOrNull(form.discharged_on),
+            room_no:        form.room_no,
+            ward:           form.ward,
+            total_stay:     parseInt(form.total_stay) || 0,
+            // explicitly null out OPD fields
+            visit_date:     null,
+          }
+
       let data
       if (isEdit) {
         ;({ data } = await apiClient.patch(`/bills/${editBill.id}/`, payload))
