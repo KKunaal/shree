@@ -5,7 +5,7 @@ import Header from '../components/Header'
 import BillCard from '../components/BillCard'
 import CreateBillModal from '../components/CreateBillModal'
 
-export default function Bills() {
+export default function Bills({ onTabChange }) {
   const { user, logout } = useAuth()
   const apiClient = useMemo(() => createApiClient(user.token), [user.token])
 
@@ -138,6 +138,12 @@ export default function Bills() {
                 {bills.length}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => onTabChange('charges')}
+            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            ⚙️ Charges
           </button>
         </div>
       </div>
