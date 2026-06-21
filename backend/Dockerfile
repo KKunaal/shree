@@ -25,9 +25,11 @@ COPY . .
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser && \
     mkdir -p /data /app/staticfiles && chown -R appuser:appgroup /data /app/staticfiles
 
+# Always use prod settings inside the container
+ENV DJANGO_SETTINGS_MODULE=hms.settings.prod
+
 # Collect static files (uses a dummy key — no DB needed at build time)
 RUN DJANGO_SECRET_KEY=build-time-only \
-    DJANGO_DEBUG=False \
     DATABASE_URL=sqlite:////tmp/build.db \
     GOOGLE_SHEETS_SPREADSHEET_ID=x \
     GOOGLE_SHEETS_WORKSHEET_NAME=x \

@@ -1,9 +1,13 @@
 # ── Secrets & credentials ────────────────────────────────────────────────────
+# Real env files — never commit these
 .env
+.env.dev
+.env.prod
 # service-account key files (e.g. shree-500106-*.json)
 *.json
-# re-allow package.json if ever added
+# re-allow package.json and example env templates
 !package.json
+!*.example
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 frontend/node_modules/
