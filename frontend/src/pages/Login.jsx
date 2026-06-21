@@ -16,7 +16,8 @@ export default function Login() {
     try {
       const token = btoa(`${username}:${password}`)
       // Validate credentials against the API
-      await axios.get('/api/bills/', {
+      const apiUrl = import.meta.env.VITE_API_URL || '/api'
+      await axios.get(`${apiUrl}/bills/`, {
         headers: { Authorization: `Basic ${token}` },
       })
       login(username, password)
