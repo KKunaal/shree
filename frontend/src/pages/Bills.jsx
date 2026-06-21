@@ -5,6 +5,8 @@ import Header from '../components/Header'
 import BillCard from '../components/BillCard'
 import CreateBillModal from '../components/CreateBillModal'
 
+const PAGE_SIZE = 10
+
 export default function Bills({ onTabChange }) {
   const { user, logout } = useAuth()
   const apiClient = useMemo(() => createApiClient(user.token), [user.token])
@@ -16,6 +18,7 @@ export default function Bills({ onTabChange }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL') // 'ALL' | 'IPD' | 'OPD'
+  const [page, setPage] = useState(1)
   const [toast, setToast] = useState(null)
 
   const showToast = (msg, type = 'success') => {
@@ -37,21 +40,31 @@ export default function Bills({ onTabChange }) {
 
   useEffect(() => { fetchBills() }, [fetchBills])
 
+  // Global filter — always searches all bills
   const filtered = bills.filter((b) => {
     if (typeFilter !== 'ALL' && b.bill_type !== typeFilter) return false
     const q = search.toLowerCase()
     return (
       b.patient_name.toLowerCase().includes(q) ||
       (b.ipd_no || '').toLowerCase().includes(q) ||
-      (b.opd_no || '').toLowerCase().includes(q)
+      (b.opd_no || '').toLowerCase().includes(q) ||
+      (b.mobile_no || '').includes(q)
     )
   })
+
+  // Reset to page 1 whenever search or filter changes
+  useEffect(() => { setPage(1) }, [search, typeFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   const ipdCount = bills.filter((b) => b.bill_type === 'IPD').length
   const opdCount = bills.filter((b) => b.bill_type === 'OPD').length
 
   const handleBillCreated = (newBill) => {
     setBills((prev) => [newBill, ...prev])
+    setPage(1) // new bill goes to top, jump back to page 1
     showToast(`✓ ${newBill.bill_type} bill saved for ${newBill.patient_name} · Net ₹${parseFloat(newBill.net_bill).toLocaleString('en-IN')}`)
   }
 
@@ -208,7 +221,7 @@ export default function Bills({ onTabChange }) {
       </div>
 
       {/* Bill list */}
-      <main className="max-w-2xl mx-auto w-full px-4 py-4 pb-28 space-y-3">
+      <main className="max-w-2xl mx-auto w-full px-4 py-4 pb-4 space-y-3">
         {loading ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-3xl mb-3 animate-spin">⏳</div>
@@ -225,7 +238,7 @@ export default function Bills({ onTabChange }) {
             </p>
           </div>
         ) : (
-          filtered.map((bill) => (
+          paginated.map((bill) => (
             <BillCard
               key={bill.id} bill={bill}
               onPrint={handlePrint}
@@ -235,6 +248,65 @@ export default function Bills({ onTabChange }) {
           ))
         )}
       </main>
+
+      {/* Pagination bar — only when more than PAGE_SIZE results */}
+      {filtered.length > PAGE_SIZE && (
+        <div className="max-w-2xl mx-auto w-full px-4 pb-28">
+          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
+            {/* Prev */}
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={safePage === 1}
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:text-blue-700 transition"
+            >
+              ← Prev
+            </button>
+
+            {/* Page numbers */}
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                // always show first, last, current ±1
+                const show = p === 1 || p === totalPages || Math.abs(p - safePage) <= 1
+                const showEllipsisAfter = p === 1 && safePage > 3
+                const showEllipsisBefore = p === totalPages && safePage < totalPages - 2
+                return (
+                  <span key={p} className="flex items-center">
+                    {showEllipsisAfter && <span className="px-1 text-gray-400 text-xs">…</span>}
+                    {show && (
+                      <button
+                        onClick={() => setPage(p)}
+                        className={`w-8 h-8 text-sm rounded-lg font-medium transition
+                          ${p === safePage
+                            ? 'bg-blue-700 text-white'
+                            : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                      >
+                        {p}
+                      </button>
+                    )}
+                    {showEllipsisBefore && <span className="px-1 text-gray-400 text-xs">…</span>}
+                  </span>
+                )
+              })}
+            </div>
+
+            {/* Next */}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage === totalPages}
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:text-blue-700 transition"
+            >
+              Next →
+            </button>
+          </div>
+          <p className="text-center text-xs text-gray-400 mt-2">
+            Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} bills
+          </p>
+        </div>
+      )}
+
+      {/* Spacer when no pagination bar */}
+      {filtered.length <= PAGE_SIZE && <div className="pb-28" />}
 
       {/* FAB */}
       <button
