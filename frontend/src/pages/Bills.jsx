@@ -125,6 +125,7 @@ export default function Bills({ onTabChange }) {
          <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
          <div>Gender: <b>${genderLabel}</b></div>
          <div>Weight: <b>${bill.weight ? bill.weight + ' kg' : '—'}</b></div>
+         <div>Height: <b>${bill.height ? bill.height + ' cm' : '—'}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
          <div>Visit Date: <b>${fDate(bill.visit_date)}</b></div>`
       : `<div>Patient Name: <b>${bill.patient_name || '—'}</b></div>
@@ -132,6 +133,7 @@ export default function Bills({ onTabChange }) {
          <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
          <div>Gender: <b>${genderLabel}</b></div>
          <div>Weight: <b>${bill.weight ? bill.weight + ' kg' : '—'}</b></div>
+         <div>Height: <b>${bill.height ? bill.height + ' cm' : '—'}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
          <div>Ward: <b>${bill.ward || '—'}</b></div>
          <div>Room/Bed No: <b>${bill.room_no || '—'}</b></div>
