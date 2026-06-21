@@ -4,6 +4,9 @@ set -e
 echo "==> Applying database migrations..."
 python manage.py migrate --noinput
 
+echo "==> Seeding default service rates..."
+python manage.py seed_rates || echo "   (seed_rates failed non-fatally, continuing)"
+
 echo "==> Ensuring Google Sheet headers..."
 # If the service-account file is not yet mounted (e.g. first boot before secret
 # volume is attached), skip gracefully rather than crashing the container.
