@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 
 
 IPD_HEADERS = [
-    "ID", "Patient Name", "Mobile No", "Gender", "Address", "IPD No",
+    "ID", "Patient Name", "Mobile No", "Gender", "Weight (kg)", "Address", "IPD No",
     "Admitted On", "Discharged On", "Room No", "Ward", "Total Stay (Days)",
     "Line Items (JSON)",
     "Total Bill (₹)", "Advance Paid (₹)", "Discount (₹)", "Discount Note", "Net Bill (₹)",
@@ -14,7 +14,7 @@ IPD_HEADERS = [
 ]
 
 OPD_HEADERS = [
-    "ID", "Patient Name", "Mobile No", "Gender", "Address", "OPD No", "Visit Date",
+    "ID", "Patient Name", "Mobile No", "Gender", "Weight (kg)", "Address", "OPD No", "Visit Date",
     "Line Items (JSON)",
     "Total Bill (₹)", "Advance Paid (₹)", "Discount (₹)", "Discount Note", "Net Bill (₹)",
     "Created At",
@@ -76,6 +76,7 @@ class GoogleSheetsService:
                 bill.patient_name,
                 bill.mobile_no,
                 bill.get_gender_display() if bill.gender else "",
+                str(bill.weight) if bill.weight is not None else "",
                 bill.address,
                 bill.opd_no or "",
                 bill.visit_date.isoformat() if bill.visit_date else "",
@@ -93,6 +94,7 @@ class GoogleSheetsService:
                 bill.patient_name,
                 bill.mobile_no,
                 bill.get_gender_display() if bill.gender else "",
+                str(bill.weight) if bill.weight is not None else "",
                 bill.address,
                 bill.ipd_no or "",
                 bill.admitted_on.isoformat() if bill.admitted_on else "",

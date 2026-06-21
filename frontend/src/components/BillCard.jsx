@@ -67,11 +67,13 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
               : `${fmtDate(bill.admitted_on)}${bill.discharged_on ? ` → ${fmtDate(bill.discharged_on)}` : ''}${bill.total_stay > 0 ? ` · ${bill.total_stay}d` : ''}`
             }
           </p>
-          {(bill.mobile_no || genderLabel) && (
+          {(bill.mobile_no || genderLabel || bill.weight) && (
             <p className="text-xs text-gray-400 mt-0.5">
               {bill.mobile_no && <span>📱 {bill.mobile_no}</span>}
               {bill.mobile_no && genderLabel && <span className="mx-1">·</span>}
               {genderLabel && <span>{genderLabel}</span>}
+              {bill.weight && <span className="mx-1">·</span>}
+              {bill.weight && <span>⚖️ {bill.weight} kg</span>}
             </p>
           )}
         </div>

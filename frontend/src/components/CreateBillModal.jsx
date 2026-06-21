@@ -31,17 +31,20 @@ const OPD_CHARGES = [
 ]
 
 const emptyIPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '',
+  patient_name: '', address: '', mobile_no: '', gender: '', weight: '',
   admitted_on: '', discharged_on: '',
   room_no: '', ward: '', total_stay: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
 
 const emptyOPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '',
+  patient_name: '', address: '', mobile_no: '', gender: '', weight: '',
   visit_date: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
+
+/** Returns today's date as YYYY-MM-DD in the browser's local time zone. */
+const todayISO = () => new Date().toLocaleDateString('en-CA')
 
 export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdated, editBill }) {
   const isEdit = Boolean(editBill)
@@ -51,12 +54,18 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
   const [step, setStep] = useState(1)
 
   const [form, setForm] = useState(() => {
-    if (!editBill) return billType === 'IPD' ? emptyIPD : emptyOPD
+    const today = todayISO()
+    if (!editBill) {
+      return billType === 'IPD'
+        ? { ...emptyIPD, admitted_on: today }
+        : { ...emptyOPD, visit_date: today }
+    }
     return {
       patient_name:   editBill.patient_name || '',
       address:        editBill.address || '',
       mobile_no:      editBill.mobile_no || '',
       gender:         editBill.gender || '',
+      weight:         editBill.weight != null ? String(editBill.weight) : '',
       admitted_on:    editBill.admitted_on || '',
       discharged_on:  editBill.discharged_on || '',
       room_no:        editBill.room_no || '',
@@ -128,6 +137,7 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
         address: form.address,
         mobile_no: form.mobile_no,
         gender: form.gender,
+        weight: form.weight !== '' ? form.weight : null,
         advance_paid: form.advance_paid,
         discount: form.discount !== '' ? form.discount : null,
         discount_note: form.discount_note,
@@ -203,7 +213,16 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
               ].map(({ type, icon, label }) => (
                 <button
                   key={type}
-                  onClick={() => { setBillType(type); setLineItems([]); setStep(1); setForm(type === 'IPD' ? emptyIPD : emptyOPD) }}
+                  onClick={() => {
+                    const today = todayISO()
+                    setBillType(type)
+                    setLineItems([])
+                    setStep(1)
+                    setForm(type === 'IPD'
+                      ? { ...emptyIPD, admitted_on: today }
+                      : { ...emptyOPD, visit_date: today }
+                    )
+                  }}
                   className={`flex-1 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2
                     ${billType === type ? (type === 'OPD' ? 'bg-green-600 text-white' : 'bg-blue-700 text-white') : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                 >
@@ -260,28 +279,38 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
                 </select>
               </div>
 
+              <div>
+                <label className="label">Weight (kg)</label>
+                <input className="input" type="number" min="0" max="300" step="0.1"
+                  value={form.weight} onChange={set('weight')} placeholder="e.g. 12.5" />
+              </div>
+
               {billType === 'OPD' ? (
-                <div className="col-span-2">
+                <div>
                   <label className="label">Visit Date *</label>
-                  <input className="input" type="date" value={form.visit_date} onChange={set('visit_date')} />
+                  <input className="input" type="date" max={todayISO()} value={form.visit_date} onChange={set('visit_date')} />
                 </div>
               ) : (
+                /* IPD — fill the remaining half-col with Ward, then rest below */
+                <div>
+                  <label className="label">Ward</label>
+                  <input className="input" value={form.ward} onChange={set('ward')} placeholder="General" />
+                </div>
+              )}
+
+              {billType === 'IPD' && (
                 <>
-                  <div>
-                    <label className="label">Ward</label>
-                    <input className="input" value={form.ward} onChange={set('ward')} placeholder="General" />
-                  </div>
                   <div>
                     <label className="label">Room No</label>
                     <input className="input" value={form.room_no} onChange={set('room_no')} placeholder="12" />
                   </div>
                   <div>
                     <label className="label">Admitted On *</label>
-                    <input className="input" type="date" value={form.admitted_on} onChange={set('admitted_on')} />
+                    <input className="input" type="date" max={todayISO()} value={form.admitted_on} onChange={set('admitted_on')} />
                   </div>
                   <div>
                     <label className="label">Discharged On</label>
-                    <input className="input" type="date" value={form.discharged_on} onChange={set('discharged_on')} />
+                    <input className="input" type="date" max={todayISO()} value={form.discharged_on} onChange={set('discharged_on')} />
                   </div>
                   <div className="col-span-2">
                     <label className="label">Total Stay (days)</label>

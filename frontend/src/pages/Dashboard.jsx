@@ -110,13 +110,13 @@ export default function Dashboard({ onTabChange }) {
             <div className="grid grid-cols-3 gap-3">
               <MetricCard
                 icon="🏥"
-                label="Total IPD Bills"
+                label="Total IPD"
                 value={metrics.total_ipd_bills}
                 color="blue"
               />
               <MetricCard
                 icon="🩺"
-                label="Total OPD Bills"
+                label="Total OPD"
                 value={metrics.total_opd_bills}
                 color="green"
               />

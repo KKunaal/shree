@@ -56,6 +56,11 @@ class Bill(models.Model):
     gender = models.CharField(
         max_length=1, choices=Gender.choices, blank=True, default=""
     )
+    weight = models.DecimalField(
+        max_digits=5, decimal_places=1,
+        null=True, blank=True,
+        help_text="Patient weight in kg",
+    )
 
     # ── IPD-specific ──────────────────────────────────────────────────────────
     ipd_no = models.CharField(max_length=50, blank=True, null=True)
