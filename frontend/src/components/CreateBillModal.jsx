@@ -31,14 +31,14 @@ const OPD_CHARGES = [
 ]
 
 const emptyIPD = {
-  patient_name: '', address: '',
+  patient_name: '', address: '', mobile_no: '', gender: '',
   admitted_on: '', discharged_on: '',
   room_no: '', ward: '', total_stay: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
 
 const emptyOPD = {
-  patient_name: '', address: '',
+  patient_name: '', address: '', mobile_no: '', gender: '',
   visit_date: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
@@ -55,6 +55,8 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
     return {
       patient_name:   editBill.patient_name || '',
       address:        editBill.address || '',
+      mobile_no:      editBill.mobile_no || '',
+      gender:         editBill.gender || '',
       admitted_on:    editBill.admitted_on || '',
       discharged_on:  editBill.discharged_on || '',
       room_no:        editBill.room_no || '',
@@ -124,6 +126,8 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
         bill_type: billType,
         patient_name: form.patient_name,
         address: form.address,
+        mobile_no: form.mobile_no,
+        gender: form.gender,
         advance_paid: form.advance_paid,
         discount: form.discount !== '' ? form.discount : null,
         discount_note: form.discount_note,
@@ -184,7 +188,7 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
             <h2 className="text-base font-bold text-gray-800">
               {isEdit ? `Edit ${billType} Bill` : 'New Patient Bill'}
             </h2>
-            <p className="text-xs text-gray-400">Shree Bal Rugnalaya</p>
+            <p className="text-xs text-gray-400">Shree Hospital</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full text-xl transition">×</button>
         </div>
@@ -240,6 +244,20 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
               <div className="col-span-2">
                 <label className="label">Address</label>
                 <input className="input" value={form.address} onChange={set('address')} placeholder="Village / City" />
+              </div>
+
+              <div>
+                <label className="label">Mobile No</label>
+                <input className="input" type="tel" maxLength={15} value={form.mobile_no} onChange={set('mobile_no')} placeholder="9876543210" />
+              </div>
+              <div>
+                <label className="label">Gender</label>
+                <select className="input" value={form.gender} onChange={set('gender')}>
+                  <option value="">— Select —</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                  <option value="O">Other</option>
+                </select>
               </div>
 
               {billType === 'OPD' ? (

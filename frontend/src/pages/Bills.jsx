@@ -83,13 +83,19 @@ export default function Bills({ onTabChange }) {
       `<td style="text-align:center">${i.days}</td><td style="text-align:right">${fAmt(i.amount)}</td></tr>`
     ).join('')
 
+    const genderLabel = { M: 'Male', F: 'Female', O: 'Other' }[bill.gender] || '—'
+
     const patientSection = isOPD
       ? `<div>Patient Name: <b>${bill.patient_name || '—'}</b></div>
          <div>OPD No: <b>${bill.opd_no || '—'}</b></div>
+         <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
+         <div>Gender: <b>${genderLabel}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
          <div>Visit Date: <b>${fDate(bill.visit_date)}</b></div>`
       : `<div>Patient Name: <b>${bill.patient_name || '—'}</b></div>
          <div>IPD No: <b>${bill.ipd_no || '—'}</b></div>
+         <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
+         <div>Gender: <b>${genderLabel}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
          <div>Ward: <b>${bill.ward || '—'}</b></div>
          <div>Room No: <b>${bill.room_no || '—'}</b></div>

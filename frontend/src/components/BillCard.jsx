@@ -18,6 +18,8 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
   const hasDiscount = parseFloat(bill.discount) > 0
   const accentText = isOPD ? 'text-green-700' : 'text-blue-700'
 
+  const genderLabel = { M: '♂ Male', F: '♀ Female', O: '⚧ Other' }[bill.gender] || ''
+
   useEffect(() => {
     if (!menuOpen) return
     const handler = (e) => {
@@ -65,6 +67,13 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint }) {
               : `${fmtDate(bill.admitted_on)}${bill.discharged_on ? ` → ${fmtDate(bill.discharged_on)}` : ''}${bill.total_stay > 0 ? ` · ${bill.total_stay}d` : ''}`
             }
           </p>
+          {(bill.mobile_no || genderLabel) && (
+            <p className="text-xs text-gray-400 mt-0.5">
+              {bill.mobile_no && <span>📱 {bill.mobile_no}</span>}
+              {bill.mobile_no && genderLabel && <span className="mx-1">·</span>}
+              {genderLabel && <span>{genderLabel}</span>}
+            </p>
+          )}
         </div>
 
         <div className="flex items-start gap-0.5 shrink-0">

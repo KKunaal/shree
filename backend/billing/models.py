@@ -46,6 +46,16 @@ class Bill(models.Model):
     )
     patient_name = models.CharField(max_length=200)
     address = models.TextField(blank=True)
+    mobile_no = models.CharField(max_length=15, blank=True)
+
+    class Gender(models.TextChoices):
+        MALE   = "M", "Male"
+        FEMALE = "F", "Female"
+        OTHER  = "O", "Other"
+
+    gender = models.CharField(
+        max_length=1, choices=Gender.choices, blank=True, default=""
+    )
 
     # ── IPD-specific ──────────────────────────────────────────────────────────
     ipd_no = models.CharField(max_length=50, blank=True, null=True)

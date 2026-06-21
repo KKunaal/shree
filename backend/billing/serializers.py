@@ -36,8 +36,8 @@ class BillSerializer(serializers.ModelSerializer):
             "ipd_no", "admitted_on", "discharged_on", "room_no", "ward", "total_stay",
             # OPD
             "opd_no", "visit_date",
-            # Shared
-            "patient_name", "address",
+            # Shared patient info
+            "patient_name", "address", "mobile_no", "gender",
             "line_items",
             "total_bill", "advance_paid", "discount", "discount_note", "net_bill",
             "remote_row_ref", "created_at",
