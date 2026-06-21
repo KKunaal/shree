@@ -61,6 +61,11 @@ class Bill(models.Model):
         null=True, blank=True,
         help_text="Patient weight in kg",
     )
+    height = models.DecimalField(
+        max_digits=5, decimal_places=1,
+        null=True, blank=True,
+        help_text="Patient height in cm",
+    )
 
     # ── IPD-specific ──────────────────────────────────────────────────────────
     ipd_no = models.CharField(max_length=50, blank=True, null=True)
@@ -114,15 +119,22 @@ class Bill(models.Model):
 class Metrics(models.Model):
     """
     Singleton table (pk always = 1).
-    Stores cumulative billing metrics; kept in sync via post_save / post_delete
-    signals on Bill.  Use Metrics.rebuild() to resync from the Bills table.
+    Tracks PAID bills only — kept in sync by post_save/post_delete signals.
+    Use Metrics.rebuild() to fully recompute from the Bills table.
     """
 
+    # ── Bill counts (PAID only) ───────────────────────────────────────────────
     total_ipd_bills = models.PositiveIntegerField(default=0)
     total_opd_bills = models.PositiveIntegerField(default=0)
+
+    # ── Revenue totals (PAID only, net_bill) ──────────────────────────────────
     total_collected = models.DecimalField(
         max_digits=14, decimal_places=2, default=Decimal("0.00")
     )
+    total_cash   = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    total_upi    = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    total_online = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -138,15 +150,28 @@ class Metrics(models.Model):
 
     @classmethod
     def rebuild(cls):
-        """Recompute every cumulative field from the Bills table. Idempotent."""
-        from django.db.models import Sum
+        """
+        Recompute every cumulative field from PAID bills only. Idempotent.
+        Touches the DB with 1 aggregate query + 1 UPDATE.
+        """
+        from django.db.models import Q, Sum
 
-        ipd = Bill.objects.filter(bill_type="IPD").count()
-        opd = Bill.objects.filter(bill_type="OPD").count()
-        total = Bill.objects.aggregate(s=Sum("net_bill"))["s"] or Decimal("0.00")
+        paid = Bill.objects.filter(payment_status="PAID")
+        agg = paid.aggregate(
+            ipd=Sum("net_bill", filter=Q(bill_type="IPD")),
+            opd=Sum("net_bill", filter=Q(bill_type="OPD")),
+            total=Sum("net_bill"),
+            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
+            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+        )
+        Z = Decimal("0.00")
         obj = cls.instance()
-        obj.total_ipd_bills = ipd
-        obj.total_opd_bills = opd
-        obj.total_collected = total
+        obj.total_ipd_bills = paid.filter(bill_type="IPD").count()
+        obj.total_opd_bills = paid.filter(bill_type="OPD").count()
+        obj.total_collected = agg["total"]  or Z
+        obj.total_cash      = agg["cash"]   or Z
+        obj.total_upi       = agg["upi"]    or Z
+        obj.total_online    = agg["online"] or Z
         obj.save()
         return obj

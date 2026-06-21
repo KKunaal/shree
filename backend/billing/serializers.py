@@ -37,7 +37,7 @@ class BillSerializer(serializers.ModelSerializer):
             # OPD
             "opd_no", "visit_date",
             # Shared patient info
-            "patient_name", "address", "mobile_no", "gender", "weight",
+            "patient_name", "address", "mobile_no", "gender", "weight", "height",
             "line_items",
             "total_bill", "advance_paid", "discount", "discount_note", "net_bill",
             "payment_status", "paid_via",

@@ -5,6 +5,7 @@ from .views import (
     BillListCreateAPIView,
     BillPaymentAPIView,
     MetricsAPIView,
+    MetricsRefreshAPIView,
     ServiceRateDetailAPIView,
     ServiceRateListCreateAPIView,
 )
@@ -18,5 +19,6 @@ urlpatterns = [
     path("rates/", ServiceRateListCreateAPIView.as_view(), name="rate-list-create"),
     path("rates/<int:pk>/", ServiceRateDetailAPIView.as_view(), name="rate-detail"),
     # ── Metrics ───────────────────────────────────────────────────────────────
-    path("metrics/", MetricsAPIView.as_view(), name="metrics"),
+    path("metrics/",         MetricsAPIView.as_view(),        name="metrics"),
+    path("metrics/refresh/", MetricsRefreshAPIView.as_view(), name="metrics-refresh"),
 ]

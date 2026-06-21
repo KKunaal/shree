@@ -120,10 +120,10 @@ class MetricsAPIView(APIView):
     """
     GET /api/metrics/
 
-    Returns two groups of metrics:
-    • Cumulative (all-time): read from the Metrics singleton table, which is
-      kept in sync by post_save / post_delete signals on Bill.
-    • Today: computed on-the-fly from the Bills table filtered by today's date.
+    Fast read from the Metrics singleton (signals keep it in sync).
+    Today's figures are always computed live — filtered to PAID bills only.
+
+    For a guaranteed-fresh rebuild use GET /api/metrics/refresh/ instead.
     """
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated]
@@ -132,22 +132,32 @@ class MetricsAPIView(APIView):
         today = timezone.localdate()
         m = Metrics.instance()
 
-        today_qs = Bill.objects.filter(created_at__date=today)
-        today_ipd = today_qs.filter(bill_type="IPD").count()
-        today_opd = today_qs.filter(bill_type="OPD").count()
-        today_collected = today_qs.aggregate(s=Sum("net_bill"))["s"] or Decimal("0.00")
+        today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
+        today_agg = today_paid.aggregate(
+            total=Sum("net_bill"),
+            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
+            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+        )
+        Z = Decimal("0.00")
 
         return Response({
-            # ── cumulative (from Metrics table) ──────────────────────────────
-            "total_ipd_bills":   m.total_ipd_bills,
-            "total_opd_bills":   m.total_opd_bills,
-            "total_collected":   str(m.total_collected),
-            # ── today (live from Bills table) ────────────────────────────────
-            "today_ipd_bills":   today_ipd,
-            "today_opd_bills":   today_opd,
-            "today_collected":   str(today_collected),
-            # ── meta ─────────────────────────────────────────────────────────
-            "as_of":             today.isoformat(),
+            # ── all-time (from Metrics table, PAID only) ──────────────────────
+            "total_ipd_bills":  m.total_ipd_bills,
+            "total_opd_bills":  m.total_opd_bills,
+            "total_collected":  str(m.total_collected),
+            "total_cash":       str(m.total_cash),
+            "total_upi":        str(m.total_upi),
+            "total_online":     str(m.total_online),
+            # ── today (live, PAID only) ───────────────────────────────────────
+            "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
+            "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
+            "today_collected":  str(today_agg["total"]  or Z),
+            "today_cash":       str(today_agg["cash"]   or Z),
+            "today_upi":        str(today_agg["upi"]    or Z),
+            "today_online":     str(today_agg["online"] or Z),
+            # ── meta ──────────────────────────────────────────────────────────
+            "as_of":            today.isoformat(),
             "metrics_updated_at": m.updated_at,
         })
 
@@ -175,3 +185,63 @@ class BillPaymentAPIView(APIView):
         payment_ser.save()
         # Return the full bill so the frontend can update its state directly
         return Response(BillSerializer(bill).data)
+
+
+class MetricsRefreshAPIView(APIView):
+    """
+    GET /api/metrics/refresh/
+
+    Re-queries PAID bills and rebuilds the Metrics singleton, then returns
+    the same full payload as /api/metrics/ plus `from_cache`.
+
+    Cache gate: if the Metrics row was updated less than 60 seconds ago the
+    rebuild is skipped and the cached values are returned immediately.
+    `from_cache: true` tells the caller no rebuild happened.
+    """
+    CACHE_TTL_SECONDS = 60
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from datetime import timedelta
+
+        m = Metrics.instance()
+        age_seconds = (timezone.now() - m.updated_at).total_seconds()
+
+        if age_seconds <= self.CACHE_TTL_SECONDS:
+            from_cache = True
+        else:
+            m = Metrics.rebuild()
+            from_cache = False
+
+        today = timezone.localdate()
+        today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
+        today_agg = today_paid.aggregate(
+            total=Sum("net_bill"),
+            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
+            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+        )
+        Z = Decimal("0.00")
+
+        return Response({
+            # ── all-time (freshly rebuilt or from cache) ──────────────────────
+            "total_ipd_bills":  m.total_ipd_bills,
+            "total_opd_bills":  m.total_opd_bills,
+            "total_collected":  str(m.total_collected),
+            "total_cash":       str(m.total_cash),
+            "total_upi":        str(m.total_upi),
+            "total_online":     str(m.total_online),
+            # ── today (always live) ───────────────────────────────────────────
+            "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
+            "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
+            "today_collected":  str(today_agg["total"]  or Z),
+            "today_cash":       str(today_agg["cash"]   or Z),
+            "today_upi":        str(today_agg["upi"]    or Z),
+            "today_online":     str(today_agg["online"] or Z),
+            # ── meta ──────────────────────────────────────────────────────────
+            "as_of":            today.isoformat(),
+            "metrics_updated_at": m.updated_at,
+            "from_cache":       from_cache,
+            "cache_ttl_seconds": self.CACHE_TTL_SECONDS,
+        })
