@@ -5,7 +5,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from billing.models import Bill
+from billing.models import Bill, ServiceRate
 
 
 class TestBillApi(APITestCase):
@@ -171,3 +171,118 @@ class TestBillApi(APITestCase):
         response = self.client.delete(reverse("bill-detail", kwargs={"pk": 9999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+
+class TestServiceRateApi(APITestCase):
+    @staticmethod
+    def _auth():
+        raw = b"reception:reception@123"
+        return f"Basic {base64.b64encode(raw).decode()}"
+
+    def setUp(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self._auth())
+
+    def _make_rate(self, **kwargs):
+        defaults = {
+            "name": "Test Service",
+            "category": "IPD",
+            "default_rate": "500.00",
+            "unit": "per day",
+        }
+        defaults.update(kwargs)
+        return ServiceRate.objects.create(**defaults)
+
+    # ── create ────────────────────────────────────────────────────────────────
+
+    def test_create_rate_returns_201(self):
+        payload = {
+            "name": "Room Charges",
+            "category": "ROOM",
+            "default_rate": "2500.00",
+            "unit": "per day",
+        }
+        response = self.client.post(reverse("rate-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ServiceRate.objects.count(), 1)
+        self.assertEqual(response.data["default_rate"], "2500.00")
+
+    def test_duplicate_name_returns_400(self):
+        self._make_rate(name="Room Charges")
+        payload = {"name": "Room Charges", "category": "ROOM", "default_rate": "3000.00", "unit": "per day"}
+        response = self.client.post(reverse("rate-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── list & filter ─────────────────────────────────────────────────────────
+
+    def test_list_returns_all_rates(self):
+        self._make_rate(name="Service A", category="OPD")
+        self._make_rate(name="Service B", category="IPD")
+        response = self.client.get(reverse("rate-list-create"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+
+    def test_filter_by_category(self):
+        self._make_rate(name="Service A", category="OPD")
+        self._make_rate(name="Service B", category="IPD")
+        response = self.client.get(reverse("rate-list-create"), {"category": "OPD"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["category"], "OPD")
+
+    def test_filter_by_is_active_false(self):
+        self._make_rate(name="Active",   is_active=True)
+        self._make_rate(name="Inactive", is_active=False)
+        response = self.client.get(reverse("rate-list-create"), {"is_active": "false"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertFalse(response.data[0]["is_active"])
+
+    # ── retrieve ──────────────────────────────────────────────────────────────
+
+    def test_retrieve_rate_returns_200(self):
+        rate = self._make_rate()
+        response = self.client.get(reverse("rate-detail", kwargs={"pk": rate.pk}))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Test Service")
+
+    # ── update ────────────────────────────────────────────────────────────────
+
+    def test_patch_updates_rate(self):
+        rate = self._make_rate()
+        response = self.client.patch(
+            reverse("rate-detail", kwargs={"pk": rate.pk}),
+            {"default_rate": "750.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rate.refresh_from_db()
+        self.assertEqual(str(rate.default_rate), "750.00")
+
+    def test_patch_deactivate_rate(self):
+        rate = self._make_rate(is_active=True)
+        response = self.client.patch(
+            reverse("rate-detail", kwargs={"pk": rate.pk}),
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rate.refresh_from_db()
+        self.assertFalse(rate.is_active)
+
+    # ── delete ────────────────────────────────────────────────────────────────
+
+    def test_delete_rate_returns_204(self):
+        rate = self._make_rate()
+        response = self.client.delete(reverse("rate-detail", kwargs={"pk": rate.pk}))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(ServiceRate.objects.count(), 0)
+
+    def test_delete_nonexistent_rate_returns_404(self):
+        response = self.client.delete(reverse("rate-detail", kwargs={"pk": 9999}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    # ── auth ──────────────────────────────────────────────────────────────────
+
+    def test_unauthenticated_rate_request_returns_401(self):
+        self.client.credentials()   # clear
+        response = self.client.get(reverse("rate-list-create"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

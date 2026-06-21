@@ -3,8 +3,25 @@ from decimal import Decimal
 from django.db import transaction
 from rest_framework import serializers
 
-from .models import Bill
+from .models import Bill, ServiceRate
 from .services import GoogleSheetsService
+
+
+class ServiceRateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ServiceRate
+        fields = [
+            "id",
+            "name",
+            "category",
+            "default_rate",
+            "unit",
+            "is_active",
+            "description",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ("created_at", "updated_at")
 
 
 class BillLineItemSerializer(serializers.Serializer):
