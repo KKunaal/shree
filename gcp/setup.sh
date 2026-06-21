@@ -220,14 +220,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --timeout 300 \
   --add-cloudsql-instances "${SQL_CONN}" \
   --set-env-vars "DJANGO_DEBUG=False,DJANGO_ALLOWED_HOSTS=*,GOOGLE_SERVICE_ACCOUNT_FILE=/secrets/sa.json" \
-  --set-secrets "DJANGO_SECRET_KEY=DJANGO_SECRET_KEY:latest,DATABASE_URL=DATABASE_URL:latest,GOOGLE_SHEETS_SPREADSHEET_ID=GOOGLE_SHEETS_SPREADSHEET_ID:latest,GOOGLE_SHEETS_WORKSHEET_NAME=GOOGLE_SHEETS_WORKSHEET_NAME:latest" \
-  --project="${PROJECT_ID}"
-
-# ── Step 10: Mount service-account JSON as file via Secret Manager ─────────────
-info "Patching Cloud Run to mount service-account JSON as /secrets/sa.json..."
-gcloud run services update "${SERVICE_NAME}" \
-  --region "${REGION}" \
-  --update-secrets "/secrets/sa.json=GOOGLE_SERVICE_ACCOUNT_JSON:latest" \
+  --set-secrets "DJANGO_SECRET_KEY=DJANGO_SECRET_KEY:latest,DATABASE_URL=DATABASE_URL:latest,GOOGLE_SHEETS_SPREADSHEET_ID=GOOGLE_SHEETS_SPREADSHEET_ID:latest,GOOGLE_SHEETS_WORKSHEET_NAME=GOOGLE_SHEETS_WORKSHEET_NAME:latest,/secrets/sa.json=GOOGLE_SERVICE_ACCOUNT_JSON:latest" \
   --project="${PROJECT_ID}"
 
 # ── Done ──────────────────────────────────────────────────────────────────────

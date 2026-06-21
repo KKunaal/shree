@@ -5,7 +5,13 @@ echo "==> Applying database migrations..."
 python manage.py migrate --noinput
 
 echo "==> Ensuring Google Sheet headers..."
-python manage.py setup_sheet
+# If the service-account file is not yet mounted (e.g. first boot before secret
+# volume is attached), skip gracefully rather than crashing the container.
+if [ -f "${GOOGLE_SERVICE_ACCOUNT_FILE:-}" ]; then
+  python manage.py setup_sheet || echo "   (setup_sheet failed non-fatally, continuing)"
+else
+  echo "   Service account file not found at '${GOOGLE_SERVICE_ACCOUNT_FILE}', skipping setup_sheet."
+fi
 
 echo "==> Starting Gunicorn..."
 exec gunicorn hms.wsgi:application \
