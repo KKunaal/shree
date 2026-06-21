@@ -6,19 +6,24 @@ import BillCard from '../components/BillCard'
 import CreateBillModal from '../components/CreateBillModal'
 
 const PAGE_SIZE = 10
+const SEARCH_DEBOUNCE_MS = 5000 // 5 s after typing stops
 
 export default function Bills({ onTabChange }) {
   const { user, logout } = useAuth()
   const apiClient = useMemo(() => createApiClient(user.token), [user.token])
 
-  const [bills, setBills] = useState([])
+  const [results, setResults] = useState([])           // current page bills
+  const [totalCount, setTotalCount] = useState(0)      // total matching search+filter
+  const [summary, setSummary] = useState({ ipd: 0, opd: 0 }) // overall type counts
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editBill, setEditBill] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL') // 'ALL' | 'IPD' | 'OPD'
   const [page, setPage] = useState(1)
+  const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
 
   const showToast = (msg, type = 'success') => {
@@ -26,50 +31,51 @@ export default function Bills({ onTabChange }) {
     setTimeout(() => setToast(null), 3500)
   }
 
+  // ── Debounce: wait SEARCH_DEBOUNCE_MS after the user stops typing ──────────
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  // ── Reset to page 1 whenever the effective search or type filter changes ───
+  useEffect(() => { setPage(1) }, [debouncedSearch, typeFilter])
+
+  // ── Fetch from the server whenever page / debouncedSearch / typeFilter / refreshTick changes ─
   const fetchBills = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await apiClient.get('/bills/')
-      setBills(res.data)
+      const params = new URLSearchParams({ page })
+      if (debouncedSearch) params.set('search', debouncedSearch)
+      if (typeFilter !== 'ALL') params.set('bill_type', typeFilter)
+      const res = await apiClient.get(`/bills/?${params}`)
+      setResults(res.data.results ?? [])
+      setTotalCount(res.data.count ?? 0)
+      setSummary(res.data.summary ?? { ipd: 0, opd: 0 })
     } catch (err) {
       if (err.response?.status === 401) logout()
     } finally {
       setLoading(false)
     }
-  }, [apiClient, logout])
+  }, [apiClient, logout, page, debouncedSearch, typeFilter, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchBills() }, [fetchBills])
 
-  // Global filter — always searches all bills
-  const filtered = bills.filter((b) => {
-    if (typeFilter !== 'ALL' && b.bill_type !== typeFilter) return false
-    const q = search.toLowerCase()
-    return (
-      b.patient_name.toLowerCase().includes(q) ||
-      (b.ipd_no || '').toLowerCase().includes(q) ||
-      (b.opd_no || '').toLowerCase().includes(q) ||
-      (b.mobile_no || '').includes(q)
-    )
-  })
-
-  // Reset to page 1 whenever search or filter changes
-  useEffect(() => { setPage(1) }, [search, typeFilter])
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  // ── Derived pagination ─────────────────────────────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
-  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  const ipdCount = bills.filter((b) => b.bill_type === 'IPD').length
-  const opdCount = bills.filter((b) => b.bill_type === 'OPD').length
-
+  // ── Event handlers ─────────────────────────────────────────────────────────
   const handleBillCreated = (newBill) => {
-    setBills((prev) => [newBill, ...prev])
-    setPage(1) // new bill goes to top, jump back to page 1
+    // Jump back to page 1 with cleared search so the new bill is visible
+    setPage(1)
+    setSearch('')
+    setDebouncedSearch('')
+    setRefreshTick((t) => t + 1)
     showToast(`✓ ${newBill.bill_type} bill saved for ${newBill.patient_name} · Net ₹${parseFloat(newBill.net_bill).toLocaleString('en-IN')}`)
   }
 
   const handleBillUpdated = (updatedBill) => {
-    setBills((prev) => prev.map((b) => (b.id === updatedBill.id ? updatedBill : b)))
+    setResults((prev) => prev.map((b) => (b.id === updatedBill.id ? updatedBill : b)))
     showToast(`✓ Bill updated for ${updatedBill.patient_name}`)
   }
 
@@ -78,7 +84,12 @@ export default function Bills({ onTabChange }) {
     setConfirmDelete(null)
     try {
       await apiClient.delete(`/bills/${bill.id}/`)
-      setBills((prev) => prev.filter((b) => b.id !== bill.id))
+      // If we just deleted the last row on a page > 1, step back a page
+      if (results.length === 1 && page > 1) {
+        setPage((p) => p - 1)
+      } else {
+        setRefreshTick((t) => t + 1)
+      }
       showToast(`✓ Bill deleted for ${bill.patient_name}`)
     } catch {
       showToast('⚠ Failed to delete bill. Please try again.', 'error')
@@ -175,9 +186,9 @@ export default function Bills({ onTabChange }) {
         <div className="max-w-2xl mx-auto flex">
           <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             📋 Bills
-            {bills.length > 0 && (
+            {(summary.ipd + summary.opd) > 0 && (
               <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
-                {bills.length}
+                {summary.ipd + summary.opd}
               </span>
             )}
           </button>
@@ -192,18 +203,26 @@ export default function Bills({ onTabChange }) {
 
       {/* Search + filter */}
       <div className="max-w-2xl mx-auto w-full px-4 pt-4 space-y-2">
-        <input
-          type="search" value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔍  Search patient name, IPD / OPD no…"
-          className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-        />
+        <div className="relative">
+          <input
+            type="search" value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍  Search patient name, IPD / OPD no…"
+            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+          />
+          {/* Pending-debounce indicator */}
+          {search !== debouncedSearch && (
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">
+              ⏳
+            </span>
+          )}
+        </div>
         {/* Type filter pills */}
         <div className="flex gap-2">
           {[
-            { key: 'ALL',  label: `All (${bills.length})` },
-            { key: 'IPD',  label: `🏥 IPD (${ipdCount})` },
-            { key: 'OPD',  label: `🩺 OPD (${opdCount})` },
+            { key: 'ALL',  label: `All (${summary.ipd + summary.opd})` },
+            { key: 'IPD',  label: `🏥 IPD (${summary.ipd})` },
+            { key: 'OPD',  label: `🩺 OPD (${summary.opd})` },
           ].map(({ key, label }) => (
             <button key={key} onClick={() => setTypeFilter(key)}
               className={`text-xs rounded-full px-3 py-1.5 font-medium border transition
@@ -227,18 +246,18 @@ export default function Bills({ onTabChange }) {
             <div className="text-3xl mb-3 animate-spin">⏳</div>
             <p className="text-sm">Loading bills…</p>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : results.length === 0 ? (
           <div className="text-center py-16 text-gray-400">
             <div className="text-5xl mb-3">📋</div>
             <p className="font-medium">
-              {search || typeFilter !== 'ALL' ? 'No matching bills' : 'No bills yet'}
+              {debouncedSearch || typeFilter !== 'ALL' ? 'No matching bills' : 'No bills yet'}
             </p>
             <p className="text-sm mt-1">
-              {search || typeFilter !== 'ALL' ? 'Try adjusting your search or filter' : 'Tap + to create the first bill'}
+              {debouncedSearch || typeFilter !== 'ALL' ? 'Try adjusting your search or filter' : 'Tap + to create the first bill'}
             </p>
           </div>
         ) : (
-          paginated.map((bill) => (
+          results.map((bill) => (
             <BillCard
               key={bill.id} bill={bill}
               onPrint={handlePrint}
@@ -249,8 +268,8 @@ export default function Bills({ onTabChange }) {
         )}
       </main>
 
-      {/* Pagination bar — only when more than PAGE_SIZE results */}
-      {filtered.length > PAGE_SIZE && (
+      {/* Pagination bar — only when there is more than one page */}
+      {totalPages > 1 && (
         <div className="max-w-2xl mx-auto w-full px-4 pb-28">
           <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
             {/* Prev */}
@@ -265,7 +284,6 @@ export default function Bills({ onTabChange }) {
             {/* Page numbers */}
             <div className="flex items-center gap-1">
               {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
-                // always show first, last, current ±1
                 const show = p === 1 || p === totalPages || Math.abs(p - safePage) <= 1
                 const showEllipsisAfter = p === 1 && safePage > 3
                 const showEllipsisBefore = p === totalPages && safePage < totalPages - 2
@@ -300,13 +318,13 @@ export default function Bills({ onTabChange }) {
             </button>
           </div>
           <p className="text-center text-xs text-gray-400 mt-2">
-            Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} bills
+            Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, totalCount)} of {totalCount} bills
           </p>
         </div>
       )}
 
       {/* Spacer when no pagination bar */}
-      {filtered.length <= PAGE_SIZE && <div className="pb-28" />}
+      {totalPages <= 1 && <div className="pb-28" />}
 
       {/* FAB */}
       <button
