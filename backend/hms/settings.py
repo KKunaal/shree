@@ -23,11 +23,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "corsheaders",
     "billing",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -77,9 +79,15 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# Google Sheets configuration
+# Google Sheets configuration — IPD
 GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", "")
 GOOGLE_SHEETS_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_WORKSHEET_NAME", "Sheet1")
+# Google Sheets configuration — OPD (can be same spreadsheet, different tab)
+GOOGLE_SHEETS_OPD_SPREADSHEET_ID = os.getenv(
+    "GOOGLE_SHEETS_OPD_SPREADSHEET_ID",
+    os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID", ""),   # default: same spreadsheet
+)
+GOOGLE_SHEETS_OPD_WORKSHEET_NAME = os.getenv("GOOGLE_SHEETS_OPD_WORKSHEET_NAME", "OPD")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "")
 
 # Fixed basic auth users for API access
@@ -87,4 +95,18 @@ FIXED_BASIC_AUTH_USERS = {
     "reception": "reception@123",
     "doctor": "doctor@123",
 }
+
+# CORS configuration for frontend
+CORS_ALLOWED_ORIGINS = [
+    "https://storage.googleapis.com",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "http://localhost:5176",
+    "http://127.0.0.1:5176",
+]
+CORS_ALLOW_CREDENTIALS = True
 

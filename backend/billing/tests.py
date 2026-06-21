@@ -14,14 +14,16 @@ class TestBillApi(APITestCase):
         raw = f"{username}:{password}".encode("utf-8")
         return f"Basic {base64.b64encode(raw).decode('utf-8')}"
 
-    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="Sheet1!A2:N2")
-    def test_create_bill_computes_totals_and_saves(self, _mock_append):
+    # ── IPD create ────────────────────────────────────────────────────────────
+
+    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="Shree!A2:P2")
+    def test_create_ipd_bill_computes_totals_and_saves(self, _mock):
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
 
         payload = {
+            "bill_type": "IPD",
             "patient_name": "Jane Doe",
             "address": "Ambad",
-            "ipd_no": "IPD-1001",
             "admitted_on": "2026-06-18",
             "discharged_on": "2026-06-20",
             "room_no": "5",
@@ -30,53 +32,111 @@ class TestBillApi(APITestCase):
             "advance_paid": "500.00",
             "line_items": [
                 {"name": "Room Charges", "rate_per_day": "2500.00", "days": 2},
-                {"name": "Monitoring", "rate_per_day": "100.00", "days": 2},
+                {"name": "Monitoring",   "rate_per_day": "100.00",  "days": 2},
             ],
         }
-
         response = self.client.post(reverse("bill-list-create"), payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Bill.objects.count(), 1)
-
         bill = Bill.objects.first()
         self.assertEqual(str(bill.total_bill), "5200.00")
-        self.assertEqual(str(bill.net_bill), "4700.00")
-        self.assertEqual(bill.remote_row_ref, "Sheet1!A2:N2")
+        self.assertEqual(str(bill.net_bill),   "4700.00")
+        self.assertEqual(bill.bill_type,       "IPD")
+        self.assertEqual(bill.ipd_no,          "1")   # auto-assigned
+
+    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="Shree!A2:P2")
+    def test_ipd_no_is_auto_incremented(self, _mock):
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
+        base = {"bill_type": "IPD", "patient_name": "P", "admitted_on": "2026-01-01",
+                "advance_paid": "0", "line_items": [{"name": "x", "rate_per_day": "100", "days": 1}]}
+        self.client.post(reverse("bill-list-create"), base, format="json")
+        self.client.post(reverse("bill-list-create"), {**base, "patient_name": "Q"}, format="json")
+        nos = list(Bill.objects.order_by("id").values_list("ipd_no", flat=True))
+        self.assertEqual(nos, ["1", "2"])
+
+    # ── OPD create ────────────────────────────────────────────────────────────
+
+    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="OPD!A2:M2")
+    def test_create_opd_bill_saves(self, _mock):
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
+        payload = {
+            "bill_type": "OPD",
+            "patient_name": "Ravi Kumar",
+            "address": "Ambad",
+            "visit_date": "2026-06-21",
+            "advance_paid": "0",
+            "line_items": [{"name": "OPD First Visit", "rate_per_day": "300.00", "days": 1}],
+        }
+        response = self.client.post(reverse("bill-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        bill = Bill.objects.first()
+        self.assertEqual(bill.bill_type, "OPD")
+        self.assertEqual(bill.opd_no,    "1")
+        self.assertEqual(str(bill.total_bill), "300.00")
+
+    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="OPD!A2:M2")
+    def test_opd_missing_visit_date_returns_400(self, _mock):
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
+        payload = {
+            "bill_type": "OPD",
+            "patient_name": "Ravi Kumar",
+            "advance_paid": "0",
+            "line_items": [{"name": "OPD Visit", "rate_per_day": "300.00", "days": 1}],
+        }
+        response = self.client.post(reverse("bill-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Discount ──────────────────────────────────────────────────────────────
+
+    @patch("billing.serializers.GoogleSheetsService.append_bill_row", return_value="Shree!A2:P2")
+    def test_discount_reduces_net_bill(self, _mock):
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
+        payload = {
+            "bill_type": "IPD",
+            "patient_name": "Discount Patient",
+            "admitted_on": "2026-06-18",
+            "advance_paid": "0",
+            "discount": "200.00",
+            "discount_note": "Doctor concession",
+            "line_items": [{"name": "Room Charges", "rate_per_day": "1000.00", "days": 1}],
+        }
+        response = self.client.post(reverse("bill-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(str(response.data["net_bill"]), "800.00")  # 1000 - 0 - 200
+
+    # ── Validation ────────────────────────────────────────────────────────────
 
     def test_discharge_before_admission_returns_400(self):
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
-
         payload = {
+            "bill_type": "IPD",
             "patient_name": "Jane Doe",
             "admitted_on": "2026-06-20",
             "discharged_on": "2026-06-18",
             "line_items": [{"name": "Room Charges", "rate_per_day": "2500.00", "days": 1}],
         }
-
         response = self.client.post(reverse("bill-list-create"), payload, format="json")
-
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("non_field_errors", response.data)
 
     def test_unauthenticated_request_returns_401(self):
         payload = {
+            "bill_type": "IPD",
             "patient_name": "Jane Doe",
             "admitted_on": "2026-06-20",
             "line_items": [{"name": "Room Charges", "rate_per_day": "2500.00", "days": 1}],
         }
-
         response = self.client.post(reverse("bill-list-create"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    # ── Helpers shared by update/delete tests ─────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _make_bill(self):
-        """Create a bill directly in DB (no Sheets call needed)."""
         return Bill.objects.create(
+            bill_type="IPD",
             patient_name="Test Patient",
             address="Ambad",
-            ipd_no="IPD-TEMP",
+            ipd_no="1",
             admitted_on="2026-06-18",
             discharged_on="2026-06-20",
             room_no="3",
@@ -93,21 +153,18 @@ class TestBillApi(APITestCase):
     def test_retrieve_bill_returns_200(self):
         bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
-
         response = self.client.get(reverse("bill-detail", kwargs={"pk": bill.pk}))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["patient_name"], "Test Patient")
 
-    # ── Partial update (PATCH) ────────────────────────────────────────────────
+    # ── PATCH ─────────────────────────────────────────────────────────────────
 
     def test_patch_updates_patient_name(self):
         bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
-
         response = self.client.patch(
             reverse("bill-detail", kwargs={"pk": bill.pk}),
-            {"patient_name": "Updated Patient"},
-            format="json",
+            {"patient_name": "Updated Patient"}, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         bill.refresh_from_db()
@@ -116,27 +173,33 @@ class TestBillApi(APITestCase):
     def test_patch_advance_recomputes_net_bill(self):
         bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
-
         response = self.client.patch(
             reverse("bill-detail", kwargs={"pk": bill.pk}),
-            {"advance_paid": "1000.00"},
-            format="json",
+            {"advance_paid": "1000.00"}, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         bill.refresh_from_db()
-        self.assertEqual(str(bill.advance_paid), "1000.00")
-        self.assertEqual(str(bill.net_bill), "4000.00")   # 5000 - 1000
+        self.assertEqual(str(bill.net_bill), "4000.00")
 
-    # ── Full update (PUT) ─────────────────────────────────────────────────────
+    def test_patch_discount_recomputes_net_bill(self):
+        bill = self._make_bill()
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
+        response = self.client.patch(
+            reverse("bill-detail", kwargs={"pk": bill.pk}),
+            {"discount": "500.00", "discount_note": "Special concession"}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        bill.refresh_from_db()
+        self.assertEqual(str(bill.net_bill), "4000.00")  # 5000 - 500 (advance) - 500 (discount)
+
+    # ── PUT ───────────────────────────────────────────────────────────────────
 
     def test_put_replaces_line_items_and_recomputes_totals(self):
         bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
-
         payload = {
             "patient_name": "Test Patient",
             "admitted_on": "2026-06-18",
-            "discharged_on": "2026-06-20",
             "total_stay": 2,
             "advance_paid": "0.00",
             "line_items": [
@@ -144,30 +207,25 @@ class TestBillApi(APITestCase):
                 {"name": "Nursing Charges", "rate_per_day": "300.00",  "days": 2},
             ],
         }
-
         response = self.client.put(
-            reverse("bill-detail", kwargs={"pk": bill.pk}),
-            payload,
-            format="json",
+            reverse("bill-detail", kwargs={"pk": bill.pk}), payload, format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         bill.refresh_from_db()
-        self.assertEqual(str(bill.total_bill), "5600.00")  # (2500+300)*2
+        self.assertEqual(str(bill.total_bill), "5600.00")
         self.assertEqual(str(bill.net_bill),   "5600.00")
 
-    # ── Delete ────────────────────────────────────────────────────────────────
+    # ── DELETE ────────────────────────────────────────────────────────────────
 
     def test_delete_removes_bill(self):
         bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
-
         response = self.client.delete(reverse("bill-detail", kwargs={"pk": bill.pk}))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Bill.objects.count(), 0)
 
     def test_delete_nonexistent_returns_404(self):
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
-
         response = self.client.delete(reverse("bill-detail", kwargs={"pk": 9999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 

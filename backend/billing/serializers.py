@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Max
 from rest_framework import serializers
 
 from .models import Bill, ServiceRate
@@ -11,15 +12,8 @@ class ServiceRateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceRate
         fields = [
-            "id",
-            "name",
-            "category",
-            "default_rate",
-            "unit",
-            "is_active",
-            "description",
-            "created_at",
-            "updated_at",
+            "id", "name", "category", "default_rate", "unit",
+            "is_active", "description", "created_at", "updated_at",
         ]
         read_only_fields = ("created_at", "updated_at")
 
@@ -37,62 +31,114 @@ class BillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bill
         fields = [
-            "id",
-            "patient_name",
-            "address",
-            "ipd_no",
-            "admitted_on",
-            "discharged_on",
-            "room_no",
-            "ward",
-            "total_stay",
+            "id", "bill_type",
+            # IPD
+            "ipd_no", "admitted_on", "discharged_on", "room_no", "ward", "total_stay",
+            # OPD
+            "opd_no", "visit_date",
+            # Shared
+            "patient_name", "address",
             "line_items",
-            "total_bill",
-            "advance_paid",
-            "net_bill",
-            "remote_row_ref",
-            "created_at",
+            "total_bill", "advance_paid", "discount", "discount_note", "net_bill",
+            "remote_row_ref", "created_at",
         ]
-        read_only_fields = ("total_bill", "net_bill", "remote_row_ref", "created_at")
+        read_only_fields = (
+            "ipd_no", "opd_no",           # auto-assigned
+            "total_bill", "net_bill",      # computed
+            "remote_row_ref", "created_at",
+        )
 
     def validate(self, attrs):
-        admitted_on = attrs.get("admitted_on")
-        discharged_on = attrs.get("discharged_on")
+        is_create = self.instance is None
+        bill_type = attrs.get(
+            "bill_type",
+            self.instance.bill_type if self.instance else "IPD",
+        )
 
-        if discharged_on and admitted_on and discharged_on < admitted_on:
-            raise serializers.ValidationError("Discharged date cannot be before admitted date.")
+        # Required-field checks only on CREATE
+        if is_create:
+            if bill_type == "IPD" and not attrs.get("admitted_on"):
+                raise serializers.ValidationError(
+                    {"admitted_on": "Admitted date is required for IPD bills."}
+                )
+            if bill_type == "OPD" and not attrs.get("visit_date"):
+                raise serializers.ValidationError(
+                    {"visit_date": "Visit date is required for OPD bills."}
+                )
+
+        # Always validate date ordering when both dates are present
+        if bill_type == "IPD":
+            admitted_on = attrs.get("admitted_on") or (self.instance.admitted_on if self.instance else None)
+            discharged_on = attrs.get("discharged_on") or (self.instance.discharged_on if self.instance else None)
+            if discharged_on and admitted_on and discharged_on < admitted_on:
+                raise serializers.ValidationError(
+                    "Discharged date cannot be before admitted date."
+                )
 
         return attrs
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
     def _compute_line_items(line_items):
         normalized = []
         total_bill = Decimal("0.00")
-
         for item in line_items:
             rate = Decimal(item["rate_per_day"])
             days = int(item["days"])
             amount = (rate * Decimal(days)).quantize(Decimal("0.01"))
-
-            normalized.append(
-                {
-                    "name": item["name"],
-                    "rate_per_day": str(rate),
-                    "days": days,
-                    "amount": str(amount),
-                }
-            )
+            normalized.append({
+                "name": item["name"],
+                "rate_per_day": str(rate),
+                "days": days,
+                "amount": str(amount),
+            })
             total_bill += amount
-
         return normalized, total_bill
+
+    @staticmethod
+    def _compute_net(total_bill, advance, discount):
+        disc = Decimal(discount) if discount is not None else Decimal("0.00")
+        return (Decimal(total_bill) - Decimal(advance) - disc).quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _next_bill_no(bill_type: str) -> str:
+        """Atomically get the next sequential number for a bill type."""
+        field = "ipd_no" if bill_type == "IPD" else "opd_no"
+        rows = (
+            Bill.objects
+            .filter(bill_type=bill_type)
+            .exclude(**{f"{field}__isnull": True})
+            .select_for_update()
+            .values_list(field, flat=True)
+        )
+        max_val = 0
+        for val in rows:
+            try:
+                max_val = max(max_val, int(val))
+            except (ValueError, TypeError):
+                pass
+        return str(max_val + 1)
+
+    # ── Write operations ──────────────────────────────────────────────────────
 
     def create(self, validated_data):
         line_items = validated_data.pop("line_items", [])
         normalized_items, total_bill = self._compute_line_items(line_items)
         advance = Decimal(validated_data.get("advance_paid", Decimal("0.00")))
-        net_bill = (total_bill - advance).quantize(Decimal("0.01"))
+        discount = validated_data.get("discount")
+        net_bill = self._compute_net(total_bill, advance, discount)
+
+        bill_type = validated_data.get("bill_type", "IPD")
 
         with transaction.atomic():
+            # Auto-assign sequential bill number
+            bill_no = self._next_bill_no(bill_type)
+            if bill_type == "IPD":
+                validated_data["ipd_no"] = bill_no
+            else:
+                validated_data["opd_no"] = bill_no
+
             bill = Bill.objects.create(
                 **validated_data,
                 line_items=normalized_items,
@@ -100,8 +146,10 @@ class BillSerializer(serializers.ModelSerializer):
                 net_bill=net_bill,
             )
 
+            # Append to the correct Google Sheet
             try:
-                row_ref = GoogleSheetsService().append_bill_row(bill)
+                svc = GoogleSheetsService(bill_type=bill_type)
+                row_ref = svc.append_bill_row(bill)
             except Exception as exc:  # noqa: BLE001
                 raise serializers.ValidationError({"google_sheets": str(exc)}) from exc
 
@@ -111,25 +159,23 @@ class BillSerializer(serializers.ModelSerializer):
         return bill
 
     def update(self, instance, validated_data):
+        # Prevent bill_type from being changed after creation
+        validated_data.pop("bill_type", None)
+
         line_items = validated_data.pop("line_items", None)
 
-        # Recompute totals only when line_items are supplied in the request
         if line_items is not None:
             normalized_items, total_bill = self._compute_line_items(line_items)
-            advance = Decimal(
-                validated_data.get("advance_paid", instance.advance_paid)
-            )
-            net_bill = (total_bill - advance).quantize(Decimal("0.01"))
+            advance = Decimal(validated_data.get("advance_paid", instance.advance_paid))
+            discount = validated_data.get("discount", instance.discount)
+            net_bill = self._compute_net(total_bill, advance, discount)
             validated_data["line_items"] = normalized_items
             validated_data["total_bill"] = total_bill
             validated_data["net_bill"] = net_bill
-        else:
-            # If only patient/meta fields change, recompute net from existing total
-            if "advance_paid" in validated_data:
-                advance = Decimal(validated_data["advance_paid"])
-                validated_data["net_bill"] = (
-                    instance.total_bill - advance
-                ).quantize(Decimal("0.01"))
+        elif "advance_paid" in validated_data or "discount" in validated_data:
+            advance = Decimal(validated_data.get("advance_paid", instance.advance_paid))
+            discount = validated_data.get("discount", instance.discount)
+            validated_data["net_bill"] = self._compute_net(instance.total_bill, advance, discount)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
