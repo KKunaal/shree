@@ -1,0 +1,38 @@
+# ── Secrets & credentials ────────────────────────────────────────────────────
+.env
+# service-account key files (e.g. shree-500106-*.json)
+*.json
+# re-allow package.json if ever added
+!package.json
+
+# ── Django runtime ───────────────────────────────────────────────────────────
+db.sqlite3
+*.sqlite3
+*.log
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+
+# ── Virtual environment ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── VS Code ───────────────────────────────────────────────────────────────────
+.vscode/
+
+# ── OS artefacts ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Build / dist ─────────────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
