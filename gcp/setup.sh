@@ -90,7 +90,7 @@ info "Building and pushing Docker image with Cloud Build..."
 gcloud builds submit \
   --tag "${IMAGE}:latest" \
   --project "${PROJECT_ID}" \
-  .
+  backend/
 success "Image pushed: ${IMAGE}:latest"
 
 # ── Step 4: Wait for Cloud SQL instance to be RUNNABLE ───────────────────────
@@ -285,7 +285,7 @@ info "Building and pushing Docker image with Cloud Build..."
 gcloud builds submit \
   --tag "${IMAGE}:latest" \
   --project "${PROJECT_ID}" \
-  .
+  backend/
 success "Image pushed: ${IMAGE}:latest"
 
 # ── Step 4: Create Cloud SQL PostgreSQL instance ──────────────────────────────

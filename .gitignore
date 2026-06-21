@@ -5,6 +5,15 @@
 # re-allow package.json if ever added
 !package.json
 
+# ── Frontend ─────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+
+# ── Backend ───────────────────────────────────────────────────────────────────
+backend/db.sqlite3
+backend/*.sqlite3
+backend/staticfiles/
+
 # ── Django runtime ───────────────────────────────────────────────────────────
 db.sqlite3
 *.sqlite3

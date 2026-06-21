@@ -1,6 +1,7 @@
 steps:
-  # Build the container image
+  # Build the container image (context = backend/)
   - name: gcr.io/cloud-builders/docker
+    dir: backend
     args:
       - build
       - -t
