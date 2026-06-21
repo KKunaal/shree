@@ -48,9 +48,8 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentCha
     savePayment({ payment_status: isPaid ? 'UNPAID' : 'PAID', paid_via: bill.paid_via })
   }
 
-  const changePaidVia = (e) => {
-    e.stopPropagation()
-    savePayment({ payment_status: bill.payment_status, paid_via: e.target.value })
+  const changePaidVia = (newValue) => {
+    savePayment({ payment_status: bill.payment_status, paid_via: newValue })
   }
 
   return (
@@ -96,13 +95,15 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentCha
               : `${fmtDate(bill.admitted_on)}${bill.discharged_on ? ` → ${fmtDate(bill.discharged_on)}` : ''}${bill.total_stay > 0 ? ` · ${bill.total_stay}d` : ''}`
             }
           </p>
-          {(bill.mobile_no || genderLabel || bill.weight) && (
+          {(bill.mobile_no || genderLabel || bill.weight || bill.height) && (
             <p className="text-xs text-gray-400 mt-0.5">
               {bill.mobile_no && <span>📱 {bill.mobile_no}</span>}
               {bill.mobile_no && genderLabel && <span className="mx-1">·</span>}
               {genderLabel && <span>{genderLabel}</span>}
               {bill.weight && <span className="mx-1">·</span>}
               {bill.weight && <span>⚖️ {bill.weight} kg</span>}
+              {bill.height && <span className="mx-1">·</span>}
+              {bill.height && <span>📏 {bill.height} cm</span>}
             </p>
           )}
         </div>
@@ -173,18 +174,12 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentCha
           )}
         </button>
 
-        {/* Payment method */}
-        <select
+        {/* Payment method — custom dropdown so mobile renders consistently */}
+        <PayViaSelector
           value={bill.paid_via || 'UPI'}
           disabled={paymentSaving}
-          onClick={(e) => e.stopPropagation()}
           onChange={changePaidVia}
-          className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-60"
-        >
-          <option value="UPI">📲 UPI</option>
-          <option value="CASH">💵 Cash</option>
-          <option value="ONLINE">🌐 Online</option>
-        </select>
+        />
 
         {isPaid && (
           <span className="text-[10px] text-gray-400 ml-auto">
@@ -250,3 +245,68 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentCha
   )
 }
 
+/* ── Custom pay-via dropdown ────────────────────────────────────────────── *
+ * Replaces <select> so font size + position are consistent on all devices.  */
+
+const PAY_OPTIONS = [
+  { value: 'UPI',    label: '📲 UPI'    },
+  { value: 'CASH',   label: '💵 Cash'   },
+  { value: 'ONLINE', label: '🌐 Online' },
+]
+
+function PayViaSelector({ value, disabled, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  const current = PAY_OPTIONS.find(o => o.value === value) || PAY_OPTIONS[0]
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('touchstart', close, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('touchstart', close)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      {/* Trigger */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
+        className="flex items-center gap-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-600 disabled:opacity-60 select-none active:bg-gray-50"
+      >
+        <span>{current.label}</span>
+        <span className="text-[10px] text-gray-400 leading-none">▾</span>
+      </button>
+
+      {/* Dropdown — anchored below trigger, consistent on all screen sizes */}
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-[120px] py-1">
+          {PAY_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onChange(opt.value)
+                setOpen(false)
+              }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
+                opt.value === value ? 'font-semibold text-blue-700' : 'text-gray-700'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

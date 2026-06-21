@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 const CATEGORIES = [
   { value: 'OPD',       label: 'OPD' },
@@ -114,11 +114,10 @@ export default function RateFormModal({ apiClient, onClose, onSaved, editRate })
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Category *</label>
-              <select className="input" value={form.category} onChange={set('category')}>
-                {CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+              <CategorySelector
+                value={form.category}
+                onChange={(v) => setForm((f) => ({ ...f, category: v }))}
+              />
             </div>
             <div>
               <label className="label">Default Rate (₹) *</label>
@@ -214,6 +213,61 @@ export default function RateFormModal({ apiClient, onClose, onSaved, editRate })
         </div>
 
       </div>
+    </div>
+  )
+}
+
+/* ── Custom category dropdown ───────────────────────────────────────────── *
+ * Replaces <select> so font size + position are consistent on all devices.  */
+
+function CategorySelector({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  const current = CATEGORIES.find((c) => c.value === value) || CATEGORIES[0]
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('touchstart', close, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('touchstart', close)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      {/* Trigger — same height as .input */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 transition select-none"
+      >
+        <span>{current.label}</span>
+        <span className={`text-[10px] text-gray-400 leading-none transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+
+      {/* Dropdown — anchored below trigger, full width of parent */}
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.value}
+              type="button"
+              onClick={() => { onChange(cat.value); setOpen(false) }}
+              className={`w-full text-left px-3 py-2.5 text-sm hover:bg-gray-50 transition ${
+                cat.value === value ? 'font-semibold text-blue-700' : 'text-gray-700'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

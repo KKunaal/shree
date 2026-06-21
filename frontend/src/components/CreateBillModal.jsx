@@ -31,14 +31,14 @@ const OPD_CHARGES = [
 ]
 
 const emptyIPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '', weight: '',
+  patient_name: '', address: '', mobile_no: '', gender: '', weight: '', height: '',
   admitted_on: '', discharged_on: '',
   room_no: '', ward: '', total_stay: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
 
 const emptyOPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '', weight: '',
+  patient_name: '', address: '', mobile_no: '', gender: '', weight: '', height: '',
   visit_date: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
@@ -66,6 +66,7 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
       mobile_no:      editBill.mobile_no || '',
       gender:         editBill.gender || '',
       weight:         editBill.weight != null ? String(editBill.weight) : '',
+      height:         editBill.height != null ? String(editBill.height) : '',
       admitted_on:    editBill.admitted_on || '',
       discharged_on:  editBill.discharged_on || '',
       room_no:        editBill.room_no || '',
@@ -138,6 +139,7 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
         mobile_no: form.mobile_no,
         gender: form.gender,
         weight: form.weight !== '' ? form.weight : null,
+        height: form.height !== '' ? form.height : null,
         advance_paid: form.advance_paid,
         discount: form.discount !== '' ? form.discount : null,
         discount_note: form.discount_note,
@@ -271,18 +273,33 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
               </div>
               <div>
                 <label className="label">Gender</label>
-                <select className="input" value={form.gender} onChange={set('gender')}>
-                  <option value="">— Select —</option>
-                  <option value="M">Male</option>
-                  <option value="F">Female</option>
-                  <option value="O">Other</option>
-                </select>
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden h-[42px]">
+                  {[{ v: 'M', l: 'Male' }, { v: 'F', l: 'Female' }, { v: 'O', l: 'Other' }].map(({ v, l }) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, gender: f.gender === v ? '' : v }))}
+                      className={`flex-1 text-sm font-medium transition
+                        ${form.gender === v
+                          ? (billType === 'OPD' ? 'bg-green-600 text-white' : 'bg-blue-700 text-white')
+                          : 'bg-white text-gray-500 hover:bg-gray-50'
+                        }`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
                 <label className="label">Weight (kg)</label>
                 <input className="input" type="number" min="0" max="300" step="0.1"
                   value={form.weight} onChange={set('weight')} placeholder="e.g. 12.5" />
+              </div>
+              <div>
+                <label className="label">Height (cm)</label>
+                <input className="input" type="number" min="0" max="300" step="0.1"
+                  value={form.height} onChange={set('height')} placeholder="e.g. 165" />
               </div>
 
               {billType === 'OPD' ? (
@@ -301,7 +318,7 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
               {billType === 'IPD' && (
                 <>
                   <div>
-                    <label className="label">Room No</label>
+                    <label className="label">Room/Bed No</label>
                     <input className="input" value={form.room_no} onChange={set('room_no')} placeholder="12" />
                   </div>
                   <div>

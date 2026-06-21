@@ -38,7 +38,7 @@ export default function Charges({ onTabChange }) {
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 3500)
+    setTimeout(() => setToast(null), 2000)
   }
 
   const fetchRates = useCallback(async () => {
@@ -104,10 +104,8 @@ export default function Charges({ onTabChange }) {
 
       {/* Toast */}
       {toast && (
-        <div
-          className={`fixed top-[68px] left-4 right-4 z-50 text-white text-sm font-medium rounded-xl px-4 py-3 shadow-lg
-            ${toast.type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}
-        >
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-white text-xs font-medium rounded-xl px-4 py-2.5 shadow-lg whitespace-nowrap pointer-events-none select-none
+          ${toast.type === 'error' ? 'bg-red-600' : 'bg-gray-800'}`}>
           {toast.msg}
         </div>
       )}
