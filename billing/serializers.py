@@ -92,3 +92,29 @@ class BillSerializer(serializers.ModelSerializer):
             bill.save(update_fields=["remote_row_ref"])
 
         return bill
+
+    def update(self, instance, validated_data):
+        line_items = validated_data.pop("line_items", None)
+
+        # Recompute totals only when line_items are supplied in the request
+        if line_items is not None:
+            normalized_items, total_bill = self._compute_line_items(line_items)
+            advance = Decimal(
+                validated_data.get("advance_paid", instance.advance_paid)
+            )
+            net_bill = (total_bill - advance).quantize(Decimal("0.01"))
+            validated_data["line_items"] = normalized_items
+            validated_data["total_bill"] = total_bill
+            validated_data["net_bill"] = net_bill
+        else:
+            # If only patient/meta fields change, recompute net from existing total
+            if "advance_paid" in validated_data:
+                advance = Decimal(validated_data["advance_paid"])
+                validated_data["net_bill"] = (
+                    instance.total_bill - advance
+                ).quantize(Decimal("0.01"))
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
