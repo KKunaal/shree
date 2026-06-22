@@ -46,7 +46,7 @@ const emptyOPD = {
 /** Returns today's date as YYYY-MM-DD in the browser's local time zone. */
 const todayISO = () => new Date().toLocaleDateString('en-CA')
 
-export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdated, editBill }) {
+export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreated, onUpdated, editBill }) {
   const isEdit = Boolean(editBill)
   const defaultType = editBill?.bill_type || 'IPD'
 
@@ -373,10 +373,16 @@ export default function CreateBillModal({ apiClient, onClose, onCreated, onUpdat
                       <div key={idx} className="grid grid-cols-12 items-center gap-1 bg-gray-50 rounded-lg px-2 py-1.5">
                         <div className="col-span-4 text-xs font-medium text-gray-700 truncate leading-tight">{item.name}</div>
                         <div className="col-span-3">
-                          <input type="number" min="0" value={item.rate_per_day}
-                            onChange={(e) => updateItem(idx, 'rate_per_day', e.target.value)}
-                            className="w-full text-right text-xs border border-gray-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
-                          />
+                          {isDoctor ? (
+                            <input type="number" min="0" value={item.rate_per_day}
+                              onChange={(e) => updateItem(idx, 'rate_per_day', e.target.value)}
+                              className="w-full text-right text-xs border border-gray-200 rounded px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-300"
+                            />
+                          ) : (
+                            <span className="block w-full text-right text-xs text-gray-600 px-1.5 py-1">
+                              {item.rate_per_day}
+                            </span>
+                          )}
                         </div>
                         <div className="col-span-2">
                           <input type="number" min="0" value={item.days}

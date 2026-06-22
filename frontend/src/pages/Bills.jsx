@@ -11,6 +11,7 @@ const SEARCH_DEBOUNCE_MS = 5000 // 5 s after typing stops
 export default function Bills({ onTabChange }) {
   const { user, logout } = useAuth()
   const apiClient = useMemo(() => createApiClient(user.token), [user.token])
+  const isDoctor = user?.role === 'doctor'
 
   const [results, setResults] = useState([])           // current page bills
   const [totalCount, setTotalCount] = useState(0)      // total matching search+filter
@@ -166,7 +167,7 @@ export default function Bills({ onTabChange }) {
       .tot .net td{font-size:15px;font-weight:700;border-top:2px solid #222;padding-top:6px}
       .foot{margin-top:40px;display:flex;justify-content:space-between;font-size:12px}
       @media print{@page{margin:18mm}}</style></head><body>
-      <div class="hdr"><h1>Shree Bal Rugnalaya</h1><p>Ambad, Jalna</p>
+      <div class="hdr"><h1>Shree Hospital</h1><p>Ambad, Jalna</p>
         <div class="badge">${isOPD ? '🩺 OPD BILL' : '🏥 IPD BILL'}</div></div>
       <div class="grid">${patientSection}</div>
       <table><thead><tr>
@@ -205,12 +206,14 @@ export default function Bills({ onTabChange }) {
       {/* Tab bar */}
       <div className="bg-white border-b sticky top-[60px] z-30">
         <div className="max-w-2xl mx-auto flex">
-          <button
-            onClick={() => onTabChange('dashboard')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            📊 Dashboard
-          </button>
+          {isDoctor && (
+            <button
+              onClick={() => onTabChange('dashboard')}
+              className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            >
+              📊 Dashboard
+            </button>
+          )}
           <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             📋 Bills
             {(summary.ipd + summary.opd) > 0 && (
@@ -219,12 +222,14 @@ export default function Bills({ onTabChange }) {
               </span>
             )}
           </button>
-          <button
-            onClick={() => onTabChange('charges')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            ⚙️ Charges
-          </button>
+          {isDoctor && (
+            <button
+              onClick={() => onTabChange('charges')}
+              className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            >
+              ⚙️ Charges
+            </button>
+          )}
         </div>
       </div>
 
@@ -287,9 +292,10 @@ export default function Bills({ onTabChange }) {
           results.map((bill) => (
             <BillCard
               key={bill.id} bill={bill}
+              isDoctor={isDoctor}
               onPrint={handlePrint}
               onEdit={(b) => setEditBill(b)}
-              onDelete={(b) => setConfirmDelete(b)}
+              onDelete={isDoctor ? (b) => setConfirmDelete(b) : undefined}
               onPaymentChange={handlePaymentChange}
             />
           ))
@@ -364,11 +370,11 @@ export default function Bills({ onTabChange }) {
       </button>
 
       {showCreate && (
-        <CreateBillModal apiClient={apiClient} onClose={() => setShowCreate(false)} onCreated={handleBillCreated} />
+        <CreateBillModal apiClient={apiClient} isDoctor={isDoctor} onClose={() => setShowCreate(false)} onCreated={handleBillCreated} />
       )}
 
       {editBill && (
-        <CreateBillModal apiClient={apiClient} onClose={() => setEditBill(null)} onUpdated={handleBillUpdated} editBill={editBill} />
+        <CreateBillModal apiClient={apiClient} isDoctor={isDoctor} onClose={() => setEditBill(null)} onUpdated={handleBillUpdated} editBill={editBill} />
       )}
 
       {confirmDelete && (

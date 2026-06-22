@@ -13,7 +13,8 @@ export function AuthProvider({ children }) {
   })
 
   const login = (username, password) => {
-    const u = { username, password, token: btoa(`${username}:${password}`) }
+    const role = username === 'doctor' ? 'doctor' : 'reception'
+    const u = { username, password, token: btoa(`${username}:${password}`), role }
     setUser(u)
     localStorage.setItem('shree_auth', JSON.stringify(u))
   }

@@ -7,10 +7,23 @@ import Charges from './pages/Charges'
 
 export default function App() {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('dashboard')
+  const isDoctor = user?.role === 'doctor'
+
+  // Reception lands on Bills; doctor lands on Dashboard
+  const [activeTab, setActiveTab] = useState(() => isDoctor ? 'dashboard' : 'bills')
 
   if (!user) return <Login />
-  if (activeTab === 'bills')     return <Bills     onTabChange={setActiveTab} />
-  if (activeTab === 'charges')   return <Charges   onTabChange={setActiveTab} />
-  return                                <Dashboard onTabChange={setActiveTab} />
+
+  // Reception is hard-blocked from dashboard and charges
+  const safeSetTab = (tab) => {
+    if (!isDoctor && (tab === 'dashboard' || tab === 'charges')) return
+    setActiveTab(tab)
+  }
+
+  if (activeTab === 'bills')                 return <Bills     onTabChange={safeSetTab} />
+  if (activeTab === 'charges' && isDoctor)   return <Charges   onTabChange={safeSetTab} />
+  if (activeTab === 'dashboard' && isDoctor) return <Dashboard onTabChange={safeSetTab} />
+
+  // Fallback (shouldn't reach here, but safety net)
+  return <Bills onTabChange={safeSetTab} />
 }

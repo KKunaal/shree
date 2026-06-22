@@ -10,7 +10,7 @@ const fmtDate = (d) =>
 
 const PAID_VIA_LABELS = { CASH: '💵 Cash', UPI: '📲 UPI', ONLINE: '🌐 Online' }
 
-export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentChange }) {
+export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
@@ -139,11 +139,15 @@ export default function BillCard({ bill, onEdit, onDelete, onPrint, onPaymentCha
                   className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
                   ✏️ Edit
                 </button>
-                <div className="h-px bg-gray-100 mx-3 my-0.5" />
-                <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete?.(bill) }}
-                  className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5">
-                  🗑️ Delete
-                </button>
+                {isDoctor && onDelete && (
+                  <>
+                    <div className="h-px bg-gray-100 mx-3 my-0.5" />
+                    <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete?.(bill) }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5">
+                      🗑️ Delete
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
