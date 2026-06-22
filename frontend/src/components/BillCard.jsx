@@ -16,7 +16,7 @@ const STATUS_BADGE = {
   UNPAID:  { cls: 'bg-orange-100  text-orange-700',  label: '⏳ Unpaid'  },
 }
 
-export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange }) {
+export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange, onCollectPartial }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
@@ -149,6 +149,12 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
                   <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onEdit?.(bill) }}
                     className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
                     ✏️ Edit
+                  </button>
+                )}
+                {isDoctor && bill.payment_status === 'UNPAID' && onCollectPartial && (
+                  <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onCollectPartial(bill) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-indigo-700 hover:bg-indigo-50 flex items-center gap-2.5">
+                    💰 Collect Partial
                   </button>
                 )}
                 {isDoctor && onDelete && (

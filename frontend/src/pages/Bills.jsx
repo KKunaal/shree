@@ -20,6 +20,7 @@ export default function Bills({ onTabChange }) {
   const [showCreate, setShowCreate] = useState(false)
   const [editBill, setEditBill] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [collectPartialBill, setCollectPartialBill] = useState(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL') // 'ALL' | 'IPD' | 'OPD'
@@ -104,6 +105,26 @@ export default function Bills({ onTabChange }) {
       setResults((prev) => prev.map((b) => (b.id === billId ? data : b)))
     } catch {
       showToast('⚠ Failed to update payment status.', 'error')
+    }
+  }
+
+  const handleCollectPartialSubmit = async (amount) => {
+    if (!collectPartialBill) return
+    try {
+      const { data } = await apiClient.post(
+        `/bills/${collectPartialBill.id}/collect-partial/`,
+        { amount: String(amount) }
+      )
+      // Update original bill in list + prepend new UNPAID bill at top
+      setResults((prev) => [
+        data.new_bill,
+        ...prev.map((b) => (b.id === collectPartialBill.id ? data.original : b)),
+      ])
+      setTotalCount((c) => c + 1)
+      setCollectPartialBill(null)
+      showToast(`✓ Partial split done — new bill #${data.new_bill.ipd_no || data.new_bill.opd_no} created`)
+    } catch (err) {
+      showToast(err?.response?.data?.detail || '⚠ Failed to collect partial.', 'error')
     }
   }
 
@@ -307,6 +328,7 @@ export default function Bills({ onTabChange }) {
               onEdit={(b) => setEditBill(b)}
               onDelete={isDoctor ? (b) => setConfirmDelete(b) : undefined}
               onPaymentChange={handlePaymentChange}
+              onCollectPartial={isDoctor ? (b) => setCollectPartialBill(b) : undefined}
             />
           ))
         )}
@@ -411,6 +433,112 @@ export default function Bills({ onTabChange }) {
           </div>
         </div>
       )}
+
+      {collectPartialBill && (
+        <CollectPartialModal
+          bill={collectPartialBill}
+          onClose={() => setCollectPartialBill(null)}
+          onConfirm={handleCollectPartialSubmit}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ── Collect Partial Modal ──────────────────────────────────────────────── */
+
+function CollectPartialModal({ bill, onClose, onConfirm }) {
+  const [amount, setAmount] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState('')
+
+  const net = parseFloat(bill.net_bill || 0)
+  const fmt = (n) => `₹${parseFloat(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+
+  const validate = (val) => {
+    const n = parseFloat(val)
+    if (!val || isNaN(n) || n <= 0) return 'Enter an amount greater than ₹0'
+    if (n >= net) return `Amount must be less than net payable of ${fmt(net)}`
+    return ''
+  }
+
+  const handleConfirm = async () => {
+    const err = validate(amount)
+    if (err) { setError(err); return }
+    setSaving(true)
+    setError('')
+    try {
+      await onConfirm(parseFloat(amount))
+    } catch {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-3xl mb-1 text-center">💰</div>
+        <h3 className="text-base font-bold text-gray-800 text-center">Collect Partial Payment</h3>
+        <p className="text-sm text-gray-500 mt-1 text-center">{bill.patient_name}</p>
+
+        {/* Net payable pill */}
+        <div className="mt-4 flex justify-center">
+          <span className="text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-3 py-1">
+            Net Payable: {fmt(net)}
+          </span>
+        </div>
+
+        {/* Amount input */}
+        <div className="mt-4">
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            Amount to split off (must be less than {fmt(net)})
+          </label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₹</span>
+            <input
+              type="number"
+              min="1"
+              max={net - 1}
+              step="1"
+              autoFocus
+              value={amount}
+              onChange={(e) => { setAmount(e.target.value); setError('') }}
+              onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+              placeholder="e.g. 250"
+              className="w-full border border-gray-300 rounded-xl pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+          </div>
+          {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
+        </div>
+
+        {/* What will happen */}
+        {amount && !validate(amount) && (
+          <div className="mt-3 bg-gray-50 rounded-xl p-3 space-y-1 text-xs text-gray-600 border border-gray-100">
+            <p>✂️ Original bill reduced to <span className="font-semibold text-indigo-700">{fmt(net - parseFloat(amount))}</span> → marked <span className="font-semibold text-yellow-700">◑ Partial</span></p>
+            <p>📄 New <span className="font-semibold text-orange-700">⏳ Unpaid</span> bill created for <span className="font-semibold text-indigo-700">{fmt(amount)}</span></p>
+          </div>
+        )}
+
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 border border-gray-300 text-gray-600 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConfirm}
+            disabled={saving || !amount || !!validate(amount)}
+            className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50"
+          >
+            {saving ? '⏳ Splitting…' : `Split ${amount ? fmt(amount) : ''}`}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
