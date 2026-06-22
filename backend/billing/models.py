@@ -66,6 +66,14 @@ class Bill(models.Model):
         null=True, blank=True,
         help_text="Patient height in cm",
     )
+    age = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Patient age in years",
+    )
+    pulse_rate = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Patient pulse rate in bpm",
+    )
 
     # ── IPD-specific ──────────────────────────────────────────────────────────
     ipd_no = models.CharField(max_length=50, blank=True, null=True)

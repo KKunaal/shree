@@ -31,14 +31,16 @@ const OPD_CHARGES = [
 ]
 
 const emptyIPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '', weight: '', height: '',
+  patient_name: '', address: '', mobile_no: '', gender: '',
+  age: '', pulse_rate: '', weight: '', height: '',
   admitted_on: '', discharged_on: '',
   room_no: '', ward: '', total_stay: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
 
 const emptyOPD = {
-  patient_name: '', address: '', mobile_no: '', gender: '', weight: '', height: '',
+  patient_name: '', address: '', mobile_no: '', gender: '',
+  age: '', pulse_rate: '', weight: '', height: '',
   visit_date: '',
   advance_paid: '0', discount: '', discount_note: '',
 }
@@ -65,6 +67,8 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
       address:        editBill.address || '',
       mobile_no:      editBill.mobile_no || '',
       gender:         editBill.gender || '',
+      age:            editBill.age != null ? String(editBill.age) : '',
+      pulse_rate:     editBill.pulse_rate != null ? String(editBill.pulse_rate) : '',
       weight:         editBill.weight != null ? String(editBill.weight) : '',
       height:         editBill.height != null ? String(editBill.height) : '',
       admitted_on:    editBill.admitted_on || '',
@@ -121,9 +125,8 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
   const discountAmt = parseFloat(form.discount) || 0
   const netBill = totalBill - (parseFloat(form.advance_paid) || 0) - discountAmt
 
-  const canAdvance = form.patient_name.trim() && (
-    billType === 'OPD' ? form.visit_date : form.admitted_on
-  )
+  const canStep2 = form.patient_name.trim()
+  const canStep3 = canStep2 && (billType === 'OPD' ? form.visit_date : form.admitted_on)
 
   const handleSubmit = async () => {
     setError('')
@@ -140,6 +143,8 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         gender: form.gender,
         weight: form.weight !== '' ? form.weight : null,
         height: form.height !== '' ? form.height : null,
+        age:    form.age !== '' ? parseInt(form.age) : null,
+        pulse_rate: form.pulse_rate !== '' ? parseInt(form.pulse_rate) : null,
         advance_paid: form.advance_paid,
         discount: form.discount !== '' ? form.discount : null,
         discount_note: form.discount_note,
@@ -205,49 +210,23 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full text-xl transition">×</button>
         </div>
 
-        {/* ── Bill type toggle (create only) ── */}
-        {!isEdit && (
-          <div className="px-5 pt-4 pb-2 shrink-0">
-            <div className="flex rounded-xl border border-gray-200 overflow-hidden">
-              {[
-                { type: 'IPD', icon: '🏥', label: 'IPD — In-Patient' },
-                { type: 'OPD', icon: '🩺', label: 'OPD — Out-Patient' },
-              ].map(({ type, icon, label }) => (
-                <button
-                  key={type}
-                  onClick={() => {
-                    const today = todayISO()
-                    setBillType(type)
-                    setLineItems([])
-                    setStep(1)
-                    setForm(type === 'IPD'
-                      ? { ...emptyIPD, admitted_on: today }
-                      : { ...emptyOPD, visit_date: today }
-                    )
-                  }}
-                  className={`flex-1 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2
-                    ${billType === type ? (type === 'OPD' ? 'bg-green-600 text-white' : 'bg-blue-700 text-white') : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-                >
-                  <span>{icon}</span>{label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Step tabs ── */}
+        {/* ── Step tabs — 3 steps ── */}
         <div className="flex border-b shrink-0">
-          {['Patient Details', 'Charges & Summary'].map((label, i) => (
+          {[
+            { label: 'Patient',      s: 1, canGo: true       },
+            { label: 'Type & Dates', s: 2, canGo: !!canStep2 },
+            { label: 'Charges',      s: 3, canGo: !!canStep3 },
+          ].map(({ label, s, canGo }) => (
             <button
-              key={label}
-              onClick={() => (i === 0 || canAdvance) && setStep(i + 1)}
+              key={s}
+              onClick={() => canGo && setStep(s)}
               className={`flex-1 py-3 text-sm font-medium transition
-                ${step === i + 1
+                ${step === s
                   ? (billType === 'OPD' ? 'text-green-700 border-b-2 border-green-600' : 'text-blue-700 border-b-2 border-blue-700')
-                  : canAdvance || i === 0 ? 'text-gray-500 hover:text-gray-700' : 'text-gray-300 cursor-not-allowed'
+                  : canGo ? 'text-gray-500 hover:text-gray-700' : 'text-gray-300 cursor-not-allowed'
                 }`}
             >
-              {i + 1}. {label}
+              {s}. {label}
             </button>
           ))}
         </div>
@@ -255,7 +234,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         {/* ── Body ── */}
         <div className="overflow-y-auto flex-1 px-5 py-4">
 
-          {/* Step 1 — Patient Details */}
+          {/* ── Step 1: Patient Details (common to both IPD & OPD) ── */}
           {step === 1 && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
               <div className="col-span-2">
@@ -275,20 +254,26 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                 <label className="label">Gender</label>
                 <div className="flex rounded-lg border border-gray-300 overflow-hidden h-[42px]">
                   {[{ v: 'M', l: 'Male' }, { v: 'F', l: 'Female' }, { v: 'O', l: 'Other' }].map(({ v, l }) => (
-                    <button
-                      key={v}
-                      type="button"
+                    <button key={v} type="button"
                       onClick={() => setForm(f => ({ ...f, gender: f.gender === v ? '' : v }))}
                       className={`flex-1 text-sm font-medium transition
                         ${form.gender === v
                           ? (billType === 'OPD' ? 'bg-green-600 text-white' : 'bg-blue-700 text-white')
-                          : 'bg-white text-gray-500 hover:bg-gray-50'
-                        }`}
-                    >
-                      {l}
-                    </button>
+                          : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                    >{l}</button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="label">Age (years)</label>
+                <input className="input" type="number" min="0" max="120" step="1"
+                  value={form.age} onChange={set('age')} placeholder="e.g. 35" />
+              </div>
+              <div>
+                <label className="label">Pulse Rate (bpm)</label>
+                <input className="input" type="number" min="0" max="300" step="1"
+                  value={form.pulse_rate} onChange={set('pulse_rate')} placeholder="e.g. 72" />
               </div>
 
               <div>
@@ -301,45 +286,92 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                 <input className="input" type="number" min="0" max="300" step="0.1"
                   value={form.height} onChange={set('height')} placeholder="e.g. 165" />
               </div>
-
-              {billType === 'OPD' ? (
-                <div>
-                  <label className="label">Visit Date *</label>
-                  <input className="input" type="date" max={todayISO()} value={form.visit_date} onChange={set('visit_date')} />
-                </div>
-              ) : (
-                /* IPD — fill the remaining half-col with Ward, then rest below */
-                <div>
-                  <label className="label">Ward</label>
-                  <input className="input" value={form.ward} onChange={set('ward')} placeholder="General" />
-                </div>
-              )}
-
-              {billType === 'IPD' && (
-                <>
-                  <div>
-                    <label className="label">Room/Bed No</label>
-                    <input className="input" value={form.room_no} onChange={set('room_no')} placeholder="12" />
-                  </div>
-                  <div>
-                    <label className="label">Admitted On *</label>
-                    <input className="input" type="date" max={todayISO()} value={form.admitted_on} onChange={set('admitted_on')} />
-                  </div>
-                  <div>
-                    <label className="label">Discharged On</label>
-                    <input className="input" type="date" max={todayISO()} value={form.discharged_on} onChange={set('discharged_on')} />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="label">Total Stay (days)</label>
-                    <input className="input" type="number" min="0" value={form.total_stay} onChange={set('total_stay')} placeholder="Auto from dates" />
-                  </div>
-                </>
-              )}
             </div>
           )}
 
-          {/* Step 2 — Charges */}
+          {/* ── Step 2: Type & Dates ── */}
           {step === 2 && (
+            <div className="space-y-4">
+
+              {/* IPD / OPD toggle — create mode only; locked display in edit mode */}
+              {!isEdit ? (
+                <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+                  {[
+                    { type: 'IPD', icon: '🏥', label: 'IPD — In-Patient'  },
+                    { type: 'OPD', icon: '🩺', label: 'OPD — Out-Patient' },
+                  ].map(({ type, icon, label }) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => {
+                        const today = todayISO()
+                        setBillType(type)
+                        setLineItems([])
+                        setForm(f => ({
+                          ...f,
+                          admitted_on:   type === 'IPD' ? (f.admitted_on || today) : '',
+                          discharged_on: type === 'IPD' ? f.discharged_on : '',
+                          room_no:       type === 'IPD' ? f.room_no : '',
+                          ward:          type === 'IPD' ? f.ward : '',
+                          total_stay:    type === 'IPD' ? f.total_stay : '',
+                          visit_date:    type === 'OPD' ? (f.visit_date || today) : '',
+                        }))
+                      }}
+                      className={`flex-1 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2
+                        ${billType === type
+                          ? (type === 'OPD' ? 'bg-green-600 text-white' : 'bg-blue-700 text-white')
+                          : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      <span>{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold
+                  ${billType === 'OPD' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>
+                  <span>{billType === 'OPD' ? '🩺' : '🏥'}</span>
+                  {billType === 'OPD' ? 'OPD — Out-Patient' : 'IPD — In-Patient'}
+                  <span className="ml-auto text-xs opacity-50">locked</span>
+                </div>
+              )}
+
+              {/* Type-specific date / location fields */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+                {billType === 'OPD' ? (
+                  <div className="col-span-2">
+                    <label className="label">Visit Date *</label>
+                    <input className="input" type="date" max={todayISO()} value={form.visit_date} onChange={set('visit_date')} />
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="label">Ward</label>
+                      <input className="input" value={form.ward} onChange={set('ward')} placeholder="General" />
+                    </div>
+                    <div>
+                      <label className="label">Room / Bed No</label>
+                      <input className="input" value={form.room_no} onChange={set('room_no')} placeholder="12" />
+                    </div>
+                    <div>
+                      <label className="label">Admitted On *</label>
+                      <input className="input" type="date" max={todayISO()} value={form.admitted_on} onChange={set('admitted_on')} />
+                    </div>
+                    <div>
+                      <label className="label">Discharged On</label>
+                      <input className="input" type="date" max={todayISO()} value={form.discharged_on} onChange={set('discharged_on')} />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="label">Total Stay (days)</label>
+                      <input className="input" type="number" min="0" value={form.total_stay} onChange={set('total_stay')} placeholder="Auto from dates" />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3: Charges & Summary ── */}
+          {step === 3 && (
             <div className="space-y-4">
               {/* Quick-add chips */}
               <div>
@@ -408,7 +440,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                 </div>
               )}
 
-              {/* Totals summary */}
+              {/* Totals */}
               <div className={`rounded-xl p-4 space-y-2 border ${billType === 'OPD' ? 'bg-green-50 border-green-100' : 'bg-blue-50 border-blue-100'}`}>
                 <div className="flex justify-between text-sm text-gray-600">
                   <span>Total Bill</span>
@@ -450,21 +482,34 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
 
         {/* ── Footer ── */}
         <div className="px-5 py-4 border-t flex gap-3 shrink-0">
-          {step === 1 ? (
-            <button onClick={() => setStep(2)} disabled={!canAdvance}
+          {step === 1 && (
+            <button onClick={() => setStep(2)} disabled={!canStep2}
               className={`flex-1 text-white rounded-xl py-3 text-sm font-semibold active:scale-95 transition disabled:opacity-50
                 ${billType === 'OPD' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-700 hover:bg-blue-800'}`}
             >
-              Next: Add Charges →
+              Next: Type &amp; Dates →
             </button>
-          ) : (
+          )}
+          {step === 2 && (
             <>
               <button onClick={() => setStep(1)} className="px-5 border border-gray-300 text-gray-600 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 transition">
                 ← Back
               </button>
-              <button onClick={handleSubmit} disabled={loading || lineItems.length === 0}
+              <button onClick={() => setStep(3)} disabled={!canStep3}
                 className={`flex-1 text-white rounded-xl py-3 text-sm font-semibold active:scale-95 transition disabled:opacity-50
-                  ${billType === 'OPD' ? 'bg-green-600 hover:bg-green-700' : 'bg-green-600 hover:bg-green-700'}`}
+                  ${billType === 'OPD' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-700 hover:bg-blue-800'}`}
+              >
+                Next: Add Charges →
+              </button>
+            </>
+          )}
+          {step === 3 && (
+            <>
+              <button onClick={() => setStep(2)} className="px-5 border border-gray-300 text-gray-600 rounded-xl py-3 text-sm font-medium hover:bg-gray-50 transition">
+                ← Back
+              </button>
+              <button onClick={handleSubmit} disabled={loading || lineItems.length === 0}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white rounded-xl py-3 text-sm font-semibold active:scale-95 transition disabled:opacity-50"
               >
                 {loading ? 'Saving…' : isEdit
                   ? `✏️ Update Bill · ₹${netBill.toLocaleString('en-IN')}`

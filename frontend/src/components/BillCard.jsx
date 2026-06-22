@@ -95,11 +95,15 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
               : `${fmtDate(bill.admitted_on)}${bill.discharged_on ? ` → ${fmtDate(bill.discharged_on)}` : ''}${bill.total_stay > 0 ? ` · ${bill.total_stay}d` : ''}`
             }
           </p>
-          {(bill.mobile_no || genderLabel || bill.weight || bill.height) && (
+          {(bill.mobile_no || genderLabel || bill.age || bill.pulse_rate || bill.weight || bill.height) && (
             <p className="text-xs text-gray-400 mt-0.5">
               {bill.mobile_no && <span>📱 {bill.mobile_no}</span>}
               {bill.mobile_no && genderLabel && <span className="mx-1">·</span>}
               {genderLabel && <span>{genderLabel}</span>}
+              {bill.age && <span className="mx-1">·</span>}
+              {bill.age && <span>🎂 {bill.age} yr</span>}
+              {bill.pulse_rate && <span className="mx-1">·</span>}
+              {bill.pulse_rate && <span>💓 {bill.pulse_rate} bpm</span>}
               {bill.weight && <span className="mx-1">·</span>}
               {bill.weight && <span>⚖️ {bill.weight} kg</span>}
               {bill.height && <span className="mx-1">·</span>}

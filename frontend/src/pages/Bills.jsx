@@ -125,6 +125,8 @@ export default function Bills({ onTabChange }) {
          <div>OPD No: <b>${bill.opd_no || '—'}</b></div>
          <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
          <div>Gender: <b>${genderLabel}</b></div>
+         <div>Age: <b>${bill.age ? bill.age + ' yrs' : '—'}</b></div>
+         <div>Pulse Rate: <b>${bill.pulse_rate ? bill.pulse_rate + ' bpm' : '—'}</b></div>
          <div>Weight: <b>${bill.weight ? bill.weight + ' kg' : '—'}</b></div>
          <div>Height: <b>${bill.height ? bill.height + ' cm' : '—'}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
@@ -133,6 +135,8 @@ export default function Bills({ onTabChange }) {
          <div>IPD No: <b>${bill.ipd_no || '—'}</b></div>
          <div>Mobile No: <b>${bill.mobile_no || '—'}</b></div>
          <div>Gender: <b>${genderLabel}</b></div>
+         <div>Age: <b>${bill.age ? bill.age + ' yrs' : '—'}</b></div>
+         <div>Pulse Rate: <b>${bill.pulse_rate ? bill.pulse_rate + ' bpm' : '—'}</b></div>
          <div>Weight: <b>${bill.weight ? bill.weight + ' kg' : '—'}</b></div>
          <div>Height: <b>${bill.height ? bill.height + ' cm' : '—'}</b></div>
          <div>Address: <b>${bill.address || '—'}</b></div>
