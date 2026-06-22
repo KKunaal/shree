@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import models
+from django.utils import timezone
 
 
 class ServiceRate(models.Model):
@@ -183,3 +184,87 @@ class Metrics(models.Model):
         obj.total_online    = agg["online"] or Z
         obj.save()
         return obj
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patient Basic Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PatientBasicProfile(models.Model):
+    class Gender(models.TextChoices):
+        MALE   = "M", "Male"
+        FEMALE = "F", "Female"
+        OTHER  = "O", "Other"
+
+    # ── Core info ─────────────────────────────────────────────────────────────
+    patient_name = models.CharField(max_length=200)
+    address      = models.TextField(blank=True)
+    mobile_no    = models.CharField(max_length=15, blank=True)
+    gender       = models.CharField(max_length=1, choices=Gender.choices, blank=True, default="")
+    age          = models.PositiveSmallIntegerField(null=True, blank=True)
+    weight       = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    height       = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
+    pulse_rate   = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # ── Pre-existing conditions ────────────────────────────────────────────────
+    has_diabetes        = models.BooleanField(default=False)
+    has_high_bp         = models.BooleanField(default=False)
+    has_heart_disease   = models.BooleanField(default=False)
+    has_asthma          = models.BooleanField(default=False)
+    has_recent_surgery  = models.BooleanField(default=False)
+    is_pregnant         = models.BooleanField(default=False)
+    has_thyroid         = models.BooleanField(default=False)
+    has_kidney_disease  = models.BooleanField(default=False)
+    # free-text notes (allergies, medications, other conditions, etc.)
+    condition_notes     = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.patient_name} ({self.mobile_no or '—'})"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Queue
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Queue(models.Model):
+    class Status(models.TextChoices):
+        WAITING     = "WAITING",     "Waiting"
+        WITH_DOCTOR = "WITH_DOCTOR", "With Doctor"
+        DONE        = "DONE",        "Done"
+
+    patient = models.ForeignKey(
+        PatientBasicProfile,
+        on_delete=models.CASCADE,
+        related_name="queue_entries",
+    )
+    queue_number = models.PositiveIntegerField(
+        help_text="Sequential number within the day",
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.WAITING
+    )
+    date   = models.DateField(default=timezone.localdate)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["date", "queue_number"]
+        unique_together = [("date", "queue_number")]
+
+    def __str__(self) -> str:
+        return f"Q#{self.queue_number} – {self.patient.patient_name} [{self.status}]"
+
+    @classmethod
+    def next_number_for_today(cls):
+        """Return the next available queue number for today."""
+        today = timezone.localdate()
+        result = cls.objects.filter(date=today).aggregate(
+            max_no=models.Max("queue_number")
+        )
+        return (result["max_no"] or 0) + 1

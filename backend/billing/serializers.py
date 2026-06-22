@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Max
 from rest_framework import serializers
 
-from .models import Bill, ServiceRate
+from .models import Bill, PatientBasicProfile, Queue, ServiceRate
 from .services import GoogleSheetsService
 
 
@@ -194,3 +194,38 @@ class BillPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bill
         fields = ["id", "payment_status", "paid_via"]
+
+
+class PatientBasicProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientBasicProfile
+        fields = [
+            "id",
+            "patient_name", "address", "mobile_no", "gender",
+            "age", "weight", "height", "pulse_rate",
+            "has_diabetes", "has_high_bp", "has_heart_disease",
+            "has_asthma", "has_recent_surgery", "is_pregnant",
+            "has_thyroid", "has_kidney_disease",
+            "condition_notes",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ("created_at", "updated_at")
+
+
+class QueueSerializer(serializers.ModelSerializer):
+    patient = PatientBasicProfileSerializer(read_only=True)
+    patient_id = serializers.PrimaryKeyRelatedField(
+        queryset=PatientBasicProfile.objects.all(),
+        source="patient",
+        write_only=True,
+        required=False,
+    )
+
+    class Meta:
+        model = Queue
+        fields = [
+            "id", "patient", "patient_id",
+            "queue_number", "status", "date",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ("queue_number", "date", "created_at", "updated_at")

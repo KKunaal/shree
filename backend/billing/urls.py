@@ -6,6 +6,10 @@ from .views import (
     BillPaymentAPIView,
     MetricsAPIView,
     MetricsRefreshAPIView,
+    PatientBasicProfileDetailAPIView,
+    PatientBasicProfileListCreateAPIView,
+    QueueDetailAPIView,
+    QueueListCreateAPIView,
     ServiceRateDetailAPIView,
     ServiceRateListCreateAPIView,
 )
@@ -21,4 +25,10 @@ urlpatterns = [
     # ── Metrics ───────────────────────────────────────────────────────────────
     path("metrics/",         MetricsAPIView.as_view(),        name="metrics"),
     path("metrics/refresh/", MetricsRefreshAPIView.as_view(), name="metrics-refresh"),
+    # ── Patient Basic Profile ─────────────────────────────────────────────────
+    path("patients/", PatientBasicProfileListCreateAPIView.as_view(), name="patient-list-create"),
+    path("patients/<int:pk>/", PatientBasicProfileDetailAPIView.as_view(), name="patient-detail"),
+    # ── Queue ─────────────────────────────────────────────────────────────────
+    path("queue/", QueueListCreateAPIView.as_view(), name="queue-list"),
+    path("queue/<int:pk>/", QueueDetailAPIView.as_view(), name="queue-detail"),
 ]

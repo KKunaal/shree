@@ -63,18 +63,24 @@ export default function Dashboard({ onTabChange }) {
       <div className="bg-white border-b sticky top-[60px] z-30">
         <div className="max-w-2xl mx-auto flex">
           {/* Dashboard — active */}
-          <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
+          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             📊 Dashboard
           </button>
           <button
             onClick={() => onTabChange('bills')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
           >
             📋 Bills
           </button>
           <button
+            onClick={() => onTabChange('queue')}
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            🏥 Queue
+          </button>
+          <button
             onClick={() => onTabChange('charges')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
           >
             ⚙️ Charges
           </button>

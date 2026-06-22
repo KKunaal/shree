@@ -48,7 +48,7 @@ const emptyOPD = {
 /** Returns today's date as YYYY-MM-DD in the browser's local time zone. */
 const todayISO = () => new Date().toLocaleDateString('en-CA')
 
-export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreated, onUpdated, editBill }) {
+export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreated, onUpdated, editBill, prefillData }) {
   const isEdit = Boolean(editBill)
   const defaultType = editBill?.bill_type || 'IPD'
 
@@ -58,9 +58,21 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
   const [form, setForm] = useState(() => {
     const today = todayISO()
     if (!editBill) {
+      // Pre-fill from patient profile when opening "Create Bill" from Queue
+      const pre = prefillData || {}
+      const common = {
+        patient_name: pre.patient_name || '',
+        address:      pre.address      || '',
+        mobile_no:    pre.mobile_no    || '',
+        gender:       pre.gender       || '',
+        age:          pre.age        != null ? String(pre.age)        : '',
+        pulse_rate:   pre.pulse_rate != null ? String(pre.pulse_rate) : '',
+        weight:       pre.weight     != null ? String(pre.weight)     : '',
+        height:       pre.height     != null ? String(pre.height)     : '',
+      }
       return billType === 'IPD'
-        ? { ...emptyIPD, admitted_on: today }
-        : { ...emptyOPD, visit_date: today }
+        ? { ...emptyIPD, ...common, admitted_on: today }
+        : { ...emptyOPD, ...common, visit_date: today }
     }
     return {
       patient_name:   editBill.patient_name || '',

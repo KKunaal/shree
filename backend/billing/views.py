@@ -9,8 +9,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .authentication import FixedBasicAuthentication
-from .models import Bill, Metrics, ServiceRate
-from .serializers import BillPaymentSerializer, BillSerializer, ServiceRateSerializer
+from .models import Bill, Metrics, PatientBasicProfile, Queue, ServiceRate
+from .serializers import (
+    BillPaymentSerializer, BillSerializer,
+    PatientBasicProfileSerializer, QueueSerializer, ServiceRateSerializer,
+)
 
 _auth = {
     "authentication_classes": [FixedBasicAuthentication],
@@ -249,3 +252,79 @@ class MetricsRefreshAPIView(APIView):
             "from_cache":       from_cache,
             "cache_ttl_seconds": self.CACHE_TTL_SECONDS,
         })
+
+
+# ── Patient Basic Profile ──────────────────────────────────────────────────
+
+
+class PatientBasicProfileListCreateAPIView(generics.ListCreateAPIView):
+    """
+    GET  /api/patients/   → list all profiles  (?search=name/mobile)
+    POST /api/patients/   → create profile + auto-add to today's queue
+    """
+    serializer_class = PatientBasicProfileSerializer
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = PatientBasicProfile.objects.all()
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(patient_name__icontains=search) | Q(mobile_no__icontains=search)
+            )
+        return qs
+
+    def perform_create(self, serializer):
+        profile = serializer.save()
+        Queue.objects.create(
+            patient=profile,
+            queue_number=Queue.next_number_for_today(),
+        )
+
+
+class PatientBasicProfileDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/patients/<pk>/  → retrieve
+    PATCH  /api/patients/<pk>/  → partial update
+    DELETE /api/patients/<pk>/  → delete
+    """
+    queryset = PatientBasicProfile.objects.all()
+    serializer_class = PatientBasicProfileSerializer
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+
+# ── Queue ──────────────────────────────────────────────────────────────────
+
+
+class QueueListCreateAPIView(generics.ListCreateAPIView):
+    """
+    GET  /api/queue/   → today's queue  (?date=YYYY-MM-DD  ?status=WAITING)
+    POST /api/queue/   → manually create a queue entry (rarely needed)
+    """
+    serializer_class = QueueSerializer
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        date_str = self.request.query_params.get("date")
+        date = date_str or str(timezone.localdate())
+        qs = Queue.objects.filter(date=date).select_related("patient")
+        status = self.request.query_params.get("status")
+        if status:
+            qs = qs.filter(status=status.upper())
+        return qs
+
+
+class QueueDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/queue/<pk>/  → retrieve
+    PATCH  /api/queue/<pk>/  → update status / patient
+    DELETE /api/queue/<pk>/  → remove from queue
+    """
+    queryset = Queue.objects.select_related("patient").all()
+    serializer_class = QueueSerializer
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+

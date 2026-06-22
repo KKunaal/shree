@@ -115,17 +115,23 @@ export default function Charges({ onTabChange }) {
         <div className="max-w-2xl mx-auto flex">
           <button
             onClick={() => onTabChange('dashboard')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
           >
             📊 Dashboard
           </button>
           <button
             onClick={() => onTabChange('bills')}
-            className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
           >
             📋 Bills
           </button>
-          <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
+          <button
+            onClick={() => onTabChange('queue')}
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            🏥 Queue
+          </button>
+          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             ⚙️ Charges
             {rates.length > 0 && (
               <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">

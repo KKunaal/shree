@@ -213,12 +213,12 @@ export default function Bills({ onTabChange }) {
           {isDoctor && (
             <button
               onClick={() => onTabChange('dashboard')}
-              className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
             >
               📊 Dashboard
             </button>
           )}
-          <button className="px-6 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
+          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             📋 Bills
             {(summary.ipd + summary.opd) > 0 && (
               <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
@@ -226,10 +226,16 @@ export default function Bills({ onTabChange }) {
               </span>
             )}
           </button>
+          <button
+            onClick={() => onTabChange('queue')}
+            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+          >
+            🏥 Queue
+          </button>
           {isDoctor && (
             <button
               onClick={() => onTabChange('charges')}
-              className="px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
             >
               ⚙️ Charges
             </button>
