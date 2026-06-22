@@ -125,11 +125,11 @@ export default function Dashboard({ onTabChange }) {
               <MetricCard icon="🌐" label="Other"  value={fAmt(metrics.today_online)} color="sky"    />
             </div>
 
-            {/* Row 3 — partial payments today (shown only if any exist) */}
+            {/* Row 3 — unsettled bills today (shown only if any exist) */}
             {metrics.today_partial_bills > 0 && (
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.today_partial_bills}          color="orange" />
-                <MetricCard icon="💸" label="Partial Paid"   value={fAmt(metrics.today_partial_collected)} color="orange" />
+                <MetricCard icon="◑"  label="Unsettled Bills"   value={metrics.today_partial_bills}  color="orange" />
+                <MetricCard icon="💸" label="Unsettled Amount"  value={fAmt(metrics.today_unsettled)} color="orange" />
               </div>
             )}
           </section>
@@ -169,11 +169,11 @@ export default function Dashboard({ onTabChange }) {
               <MetricCard icon="🌐" label="Other"  value={fAmt(metrics.total_online)} color="sky"    />
             </div>
 
-            {/* Row 3 — partial payments all-time (shown only if any exist) */}
+            {/* Row 3 — unsettled bills all-time (shown only if any exist) */}
             {metrics.total_partial_bills > 0 && (
               <div className="grid grid-cols-2 gap-3 mt-3">
-                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.total_partial_bills}           color="orange" />
-                <MetricCard icon="💸" label="Partial Total"  value={fAmt(metrics.total_partial_collected)} color="orange" />
+                <MetricCard icon="◑"  label="Unsettled Bills"   value={metrics.total_partial_bills}  color="orange" />
+                <MetricCard icon="💸" label="Unsettled Amount"  value={fAmt(metrics.total_unsettled)} color="orange" />
               </div>
             )}
           </section>

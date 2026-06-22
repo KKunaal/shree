@@ -194,10 +194,11 @@ class Metrics(models.Model):
     total_upi    = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     total_online = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
 
-    # ── Partially-paid bills (PARTIAL status) ─────────────────────────────────
-    total_partial_bills     = models.PositiveIntegerField(default=0)
-    total_partial_collected = models.DecimalField(
-        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    # ── Partially-paid bills (PARTIAL status) — outstanding balance ──────────
+    total_partial_bills = models.PositiveIntegerField(default=0)
+    total_unsettled     = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00"),
+        help_text="Sum of net_bill across all PARTIAL bills (money still owed).",
     )
 
     updated_at = models.DateTimeField(auto_now=True)
@@ -228,7 +229,8 @@ class Metrics(models.Model):
         PAID:    advance_paid + each partially_collected entry + net_bill
                  → total_collected + method buckets
         PARTIAL: advance_paid + each partially_collected entry
-                 → total_partial_collected + method buckets (not total_collected)
+                 → method buckets (not total_collected — bill not fully settled)
+                 net_bill → total_unsettled (outstanding balance still owed)
         """
         Z = Decimal("0.00")
         via_map = {"CASH": "total_cash", "UPI": "total_upi", "ONLINE": "total_online"}
@@ -237,7 +239,7 @@ class Metrics(models.Model):
             "total_ipd_bills": 0, "total_opd_bills": 0,
             "total_collected": Z,
             "total_cash": Z, "total_upi": Z, "total_online": Z,
-            "total_partial_bills": 0, "total_partial_collected": Z,
+            "total_partial_bills": 0, "total_unsettled": Z,
         }
 
         for b in Bill.objects.filter(payment_status="PAID").values(
@@ -256,12 +258,11 @@ class Metrics(models.Model):
 
         for b in Bill.objects.filter(payment_status="PARTIAL").values(
             "advance_paid", "advance_paid_via",
-            "total_partially_collected", "partially_collected",
+            "net_bill", "partially_collected",
         ):
-            adv  = Decimal(str(b["advance_paid"] or "0"))
-            t_pc = Decimal(str(b.get("total_partially_collected") or "0"))
+            adv = Decimal(str(b["advance_paid"] or "0"))
             totals["total_partial_bills"] += 1
-            totals["total_partial_collected"] += adv + t_pc
+            totals["total_unsettled"] += Decimal(str(b.get("net_bill") or "0"))
             totals[via_map.get(b.get("advance_paid_via") or "CASH", "total_upi")] += adv
             cls._sum_pc_by_method(b.get("partially_collected"), via_map, totals)
 

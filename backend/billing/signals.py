@@ -85,11 +85,11 @@ def _apply_bill(updates: dict, state, sign: int) -> None:
         _apply_pc_list(updates, pc_list, sign)
 
     elif status == "PARTIAL":
-        # Total received so far = advance + partial collections
+        # total_unsettled tracks the outstanding net_bill (what's still owed).
         # Does NOT touch total_collected — bill is not fully settled.
-        _add_to(updates, "total_partial_bills",     sign)
-        _add_to(updates, "total_partial_collected", sign * (advance + total_pc))
-        _add_to(updates, _via_field(adv_via),       sign * advance)
+        _add_to(updates, "total_partial_bills", sign)
+        _add_to(updates, "total_unsettled",     sign * net)
+        _add_to(updates, _via_field(adv_via),   sign * advance)
         _apply_pc_list(updates, pc_list, sign)
     # UNPAID → no-op
 

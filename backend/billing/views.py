@@ -46,7 +46,7 @@ def _today_stats(today):
         "today_upi":               Z,
         "today_online":            Z,
         "today_partial_bills":     0,
-        "today_partial_collected": Z,
+        "today_unsettled":         Z,
     }
 
     for b in Bill.objects.filter(
@@ -70,12 +70,11 @@ def _today_stats(today):
         created_at__date=today, payment_status="PARTIAL"
     ).values(
         "advance_paid", "advance_paid_via",
-        "total_partially_collected", "partially_collected",
+        "partially_collected", "net_bill",
     ):
-        adv  = Decimal(str(b["advance_paid"] or "0"))
-        t_pc = Decimal(str(b.get("total_partially_collected") or "0"))
+        adv = Decimal(str(b["advance_paid"] or "0"))
         s["today_partial_bills"] += 1
-        s["today_partial_collected"] += adv + t_pc
+        s["today_unsettled"] += Decimal(str(b.get("net_bill") or "0"))
         s[_via.get(b.get("advance_paid_via") or "CASH", "today_upi")] += adv
         for e in (b.get("partially_collected") or []):
             s[_via.get(e.get("payment_method", "CASH"), "today_upi")] += Decimal(str(e.get("amount", "0")))
@@ -218,7 +217,7 @@ class MetricsAPIView(APIView):
             "total_upi":                str(m.total_upi),
             "total_online":             str(m.total_online),
             "total_partial_bills":      m.total_partial_bills,
-            "total_partial_collected":  str(m.total_partial_collected),
+            "total_unsettled":          str(m.total_unsettled),
             # ── today (live) ─────────────────────────────────────────────────
             "today_ipd_bills":         t["today_ipd_bills"],
             "today_opd_bills":         t["today_opd_bills"],
@@ -227,7 +226,7 @@ class MetricsAPIView(APIView):
             "today_upi":               str(t["today_upi"]),
             "today_online":            str(t["today_online"]),
             "today_partial_bills":     t["today_partial_bills"],
-            "today_partial_collected": str(t["today_partial_collected"]),
+            "today_unsettled":         str(t["today_unsettled"]),
             # ── meta ─────────────────────────────────────────────────────────
             "as_of":              today.isoformat(),
             "metrics_updated_at": m.updated_at,
@@ -519,7 +518,7 @@ class MetricsRefreshAPIView(APIView):
             "total_upi":                str(m.total_upi),
             "total_online":             str(m.total_online),
             "total_partial_bills":      m.total_partial_bills,
-            "total_partial_collected":  str(m.total_partial_collected),
+            "total_unsettled":          str(m.total_unsettled),
             # ── today (always live) ───────────────────────────────────────────
             "today_ipd_bills":         t["today_ipd_bills"],
             "today_opd_bills":         t["today_opd_bills"],
@@ -528,7 +527,7 @@ class MetricsRefreshAPIView(APIView):
             "today_upi":               str(t["today_upi"]),
             "today_online":            str(t["today_online"]),
             "today_partial_bills":     t["today_partial_bills"],
-            "today_partial_collected": str(t["today_partial_collected"]),
+            "today_unsettled":         str(t["today_unsettled"]),
             # ── meta ──────────────────────────────────────────────────────────
             "as_of":              today.isoformat(),
             "metrics_updated_at": m.updated_at,
