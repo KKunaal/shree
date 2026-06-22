@@ -136,10 +136,14 @@ class ServiceRateDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class BillListCreateAPIView(generics.ListCreateAPIView):
     """
     GET  /api/bills/          → paginated list (10/page)
-                                ?page=N          — page number (default 1)
-                                ?search=q        — filter by patient_name / ipd_no /
-                                                   opd_no / mobile_no (case-insensitive)
-                                ?bill_type=IPD|OPD — filter by type
+                                ?page=N               — page number (default 1)
+                                ?search=q             — filter by patient_name / ipd_no /
+                                                        opd_no / mobile_no (case-insensitive)
+                                ?bill_type=IPD|OPD    — filter by type
+                                ?payment_status=PAID|UNPAID|PARTIAL — filter by payment status
+                                ?date=YYYY-MM-DD      — filter bills created on a specific date
+                                ?date_from=YYYY-MM-DD — filter bills created on or after date
+                                ?date_to=YYYY-MM-DD   — filter bills created on or before date
     POST /api/bills/          → create a new bill
     """
     serializer_class = BillSerializer
@@ -148,11 +152,16 @@ class BillListCreateAPIView(generics.ListCreateAPIView):
     pagination_class = BillPagination
 
     def get_queryset(self):
+        from datetime import date as _date
         qs = Bill.objects.all().order_by("-created_at")
 
         bill_type = self.request.query_params.get("bill_type", "").upper()
         if bill_type in ("IPD", "OPD"):
             qs = qs.filter(bill_type=bill_type)
+
+        payment_status = self.request.query_params.get("payment_status", "").upper()
+        if payment_status in ("PAID", "UNPAID", "PARTIAL"):
+            qs = qs.filter(payment_status=payment_status)
 
         search = self.request.query_params.get("search", "").strip()
         if search:
@@ -163,15 +172,39 @@ class BillListCreateAPIView(generics.ListCreateAPIView):
                 | Q(mobile_no__icontains=search)
             )
 
+        date_str = self.request.query_params.get("date", "").strip()
+        date_from_str = self.request.query_params.get("date_from", "").strip()
+        date_to_str = self.request.query_params.get("date_to", "").strip()
+
+        if date_str:
+            try:
+                qs = qs.filter(created_at__date=_date.fromisoformat(date_str))
+            except ValueError:
+                pass
+        else:
+            if date_from_str:
+                try:
+                    qs = qs.filter(created_at__date__gte=_date.fromisoformat(date_from_str))
+                except ValueError:
+                    pass
+            if date_to_str:
+                try:
+                    qs = qs.filter(created_at__date__lte=_date.fromisoformat(date_to_str))
+                except ValueError:
+                    pass
+
         return qs
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
-        # Append overall counts (unaffected by search / bill_type filter)
-        # so the frontend can always show accurate tab-pill totals.
+        # Append overall counts (unaffected by search / active filters)
+        # so the frontend can always show accurate quick-filter totals.
         response.data["summary"] = {
-            "ipd": Bill.objects.filter(bill_type="IPD").count(),
-            "opd": Bill.objects.filter(bill_type="OPD").count(),
+            "ipd":     Bill.objects.filter(bill_type="IPD").count(),
+            "opd":     Bill.objects.filter(bill_type="OPD").count(),
+            "paid":    Bill.objects.filter(payment_status="PAID").count(),
+            "unpaid":  Bill.objects.filter(payment_status="UNPAID").count(),
+            "partial": Bill.objects.filter(payment_status="PARTIAL").count(),
         }
         return response
 

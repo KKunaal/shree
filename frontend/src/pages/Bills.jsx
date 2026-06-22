@@ -15,7 +15,7 @@ export default function Bills({ onTabChange }) {
 
   const [results, setResults] = useState([])           // current page bills
   const [totalCount, setTotalCount] = useState(0)      // total matching search+filter
-  const [summary, setSummary] = useState({ ipd: 0, opd: 0 }) // overall type counts
+  const [summary, setSummary] = useState({ ipd: 0, opd: 0, paid: 0, unpaid: 0, partial: 0 })
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editBill, setEditBill] = useState(null)
@@ -23,7 +23,15 @@ export default function Bills({ onTabChange }) {
   const [collectPartialBill, setCollectPartialBill] = useState(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('ALL') // 'ALL' | 'IPD' | 'OPD'
+  const [filters, setFilters] = useState({
+    billType: 'ALL',       // 'ALL' | 'IPD' | 'OPD'
+    paymentStatus: 'ALL',  // 'ALL' | 'PAID' | 'UNPAID' | 'PARTIAL'
+    dateMode: 'NONE',      // 'NONE' | 'SINGLE' | 'RANGE'
+    date: '',
+    dateFrom: '',
+    dateTo: '',
+  })
+  const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [page, setPage] = useState(1)
   const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
@@ -39,28 +47,69 @@ export default function Bills({ onTabChange }) {
     return () => clearTimeout(timer)
   }, [search])
 
-  // ── Reset to page 1 whenever the effective search or type filter changes ───
-  useEffect(() => { setPage(1) }, [debouncedSearch, typeFilter])
+  // ── Reset to page 1 whenever the effective search or filters change ────────
+  useEffect(() => { setPage(1) }, [debouncedSearch, filters])
 
-  // ── Fetch from the server whenever page / debouncedSearch / typeFilter / refreshTick changes ─
+  // ── Fetch from server whenever page / debouncedSearch / filters / refreshTick change ─
   const fetchBills = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ page })
       if (debouncedSearch) params.set('search', debouncedSearch)
-      if (typeFilter !== 'ALL') params.set('bill_type', typeFilter)
+      if (filters.billType !== 'ALL') params.set('bill_type', filters.billType)
+      if (filters.paymentStatus !== 'ALL') params.set('payment_status', filters.paymentStatus)
+      if (filters.dateMode === 'SINGLE' && filters.date) params.set('date', filters.date)
+      if (filters.dateMode === 'RANGE') {
+        if (filters.dateFrom) params.set('date_from', filters.dateFrom)
+        if (filters.dateTo)   params.set('date_to',   filters.dateTo)
+      }
       const res = await apiClient.get(`/bills/?${params}`)
       setResults(res.data.results ?? [])
       setTotalCount(res.data.count ?? 0)
-      setSummary(res.data.summary ?? { ipd: 0, opd: 0 })
+      setSummary(res.data.summary ?? { ipd: 0, opd: 0, paid: 0, unpaid: 0, partial: 0 })
     } catch (err) {
       if (err.response?.status === 401) logout()
     } finally {
       setLoading(false)
     }
-  }, [apiClient, logout, page, debouncedSearch, typeFilter, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apiClient, logout, page, debouncedSearch, filters, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchBills() }, [fetchBills])
+
+  // ── Quick-filter derived value (maps filters → a single dropdown label) ───
+  const quickFilterValue = useMemo(() => {
+    const { billType, paymentStatus, dateMode } = filters
+    if (dateMode !== 'NONE') return 'CUSTOM'
+    if (billType === 'ALL'  && paymentStatus === 'ALL')     return 'ALL'
+    if (billType === 'IPD'  && paymentStatus === 'ALL')     return 'IPD'
+    if (billType === 'OPD'  && paymentStatus === 'ALL')     return 'OPD'
+    if (billType === 'ALL'  && paymentStatus === 'PAID')    return 'PAID'
+    if (billType === 'ALL'  && paymentStatus === 'UNPAID')  return 'UNPAID'
+    if (billType === 'ALL'  && paymentStatus === 'PARTIAL') return 'PARTIAL'
+    return 'CUSTOM'
+  }, [filters])
+
+  // Number of non-default filter dimensions → drives the badge on the filter icon
+  const activeFilterCount = useMemo(() => {
+    let n = 0
+    if (filters.billType !== 'ALL') n++
+    if (filters.paymentStatus !== 'ALL') n++
+    if (filters.dateMode !== 'NONE') n++
+    return n
+  }, [filters])
+
+  const handleQuickFilter = (val) => {
+    setFilters(prev => {
+      const next = { ...prev, dateMode: 'NONE', date: '', dateFrom: '', dateTo: '' }
+      if      (val === 'IPD')     { next.billType = 'IPD'; next.paymentStatus = 'ALL' }
+      else if (val === 'OPD')     { next.billType = 'OPD'; next.paymentStatus = 'ALL' }
+      else if (val === 'PAID')    { next.billType = 'ALL'; next.paymentStatus = 'PAID' }
+      else if (val === 'UNPAID')  { next.billType = 'ALL'; next.paymentStatus = 'UNPAID' }
+      else if (val === 'PARTIAL') { next.billType = 'ALL'; next.paymentStatus = 'PARTIAL' }
+      else                        { next.billType = 'ALL'; next.paymentStatus = 'ALL' }
+      return next
+    })
+  }
 
   // ── Derived pagination ─────────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
@@ -291,40 +340,84 @@ export default function Bills({ onTabChange }) {
 
       {/* Search + filter */}
       <div className="max-w-2xl mx-auto w-full px-4 pt-4 space-y-2">
-        <div className="relative">
-          <input
-            type="search" value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="🔍  Search patient name, IPD / OPD no…"
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-          />
-          {/* Pending-debounce indicator */}
-          {search !== debouncedSearch && (
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">
-              ⏳
-            </span>
-          )}
-        </div>
-        {/* Type filter pills */}
+        {/* Row 1: search bar + advanced-filter icon */}
         <div className="flex gap-2">
-          {[
-            { key: 'ALL',  label: `All (${summary.ipd + summary.opd})` },
-            { key: 'IPD',  label: `🏥 IPD (${summary.ipd})` },
-            { key: 'OPD',  label: `🩺 OPD (${summary.opd})` },
-          ].map(({ key, label }) => (
-            <button key={key} onClick={() => setTypeFilter(key)}
-              className={`text-xs rounded-full px-3 py-1.5 font-medium border transition
-                ${typeFilter === key
-                  ? key === 'OPD' ? 'bg-green-600 text-white border-green-600'
-                    : key === 'IPD' ? 'bg-blue-700 text-white border-blue-700'
-                    : 'bg-gray-800 text-white border-gray-800'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
-                }`}
-            >
-              {label}
-            </button>
-          ))}
+          <div className="relative flex-1">
+            <input
+              type="search" value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍  Search patient name, IPD / OPD no…"
+              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            {search !== debouncedSearch && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 animate-pulse">⏳</span>
+            )}
+          </div>
+          {/* Advanced filter button */}
+          <button
+            onClick={() => setShowFilterPanel(true)}
+            className={`relative flex items-center gap-1.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition
+              ${activeFilterCount > 0
+                ? 'bg-blue-700 text-white border-blue-700'
+                : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+            title="Advanced filters"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M10 12h4M12 16h0" />
+            </svg>
+            <span className="hidden sm:inline">Filters</span>
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-4 h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
         </div>
+
+        {/* Row 2: quick-filter dropdown */}
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500 whitespace-nowrap">Quick filter:</label>
+          <select
+            value={quickFilterValue}
+            onChange={(e) => handleQuickFilter(e.target.value)}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+          >
+            {quickFilterValue === 'CUSTOM' && (
+              <option value="CUSTOM" disabled>— Custom —</option>
+            )}
+            <option value="ALL">All Bills ({summary.ipd + summary.opd})</option>
+            <option value="IPD">IPD ({summary.ipd})</option>
+            <option value="OPD">OPD ({summary.opd})</option>
+            <option value="PAID">Paid ({summary.paid})</option>
+            <option value="UNPAID">Unpaid ({summary.unpaid})</option>
+            <option value="PARTIAL">Partially Paid ({summary.partial})</option>
+          </select>
+        </div>
+
+        {/* Active filter chips */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap gap-1.5 pt-0.5">
+            {filters.billType !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-1">
+                {filters.billType === 'IPD' ? '🏥' : '🩺'} {filters.billType}
+                <button onClick={() => setFilters(f => ({ ...f, billType: 'ALL' }))} className="hover:text-blue-900 font-bold">×</button>
+              </span>
+            )}
+            {filters.paymentStatus !== 'ALL' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-1">
+                {filters.paymentStatus === 'PAID' ? '✅' : filters.paymentStatus === 'UNPAID' ? '⏳' : '💰'}
+                {' '}{filters.paymentStatus === 'PARTIAL' ? 'Partially Paid' : filters.paymentStatus.charAt(0) + filters.paymentStatus.slice(1).toLowerCase()}
+                <button onClick={() => setFilters(f => ({ ...f, paymentStatus: 'ALL' }))} className="hover:text-green-900 font-bold">×</button>
+              </span>
+            )}
+            {filters.dateMode !== 'NONE' && (
+              <span className="inline-flex items-center gap-1 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-full px-2.5 py-1">
+                📅 {filters.dateMode === 'SINGLE' ? filters.date : `${filters.dateFrom || '…'} → ${filters.dateTo || '…'}`}
+                <button onClick={() => setFilters(f => ({ ...f, dateMode: 'NONE', date: '', dateFrom: '', dateTo: '' }))} className="hover:text-purple-900 font-bold">×</button>
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bill list */}
@@ -338,10 +431,10 @@ export default function Bills({ onTabChange }) {
           <div className="text-center py-16 text-gray-400">
             <div className="text-5xl mb-3">📋</div>
             <p className="font-medium">
-              {debouncedSearch || typeFilter !== 'ALL' ? 'No matching bills' : 'No bills yet'}
+              {debouncedSearch || activeFilterCount > 0 ? 'No matching bills' : 'No bills yet'}
             </p>
             <p className="text-sm mt-1">
-              {debouncedSearch || typeFilter !== 'ALL' ? 'Try adjusting your search or filter' : 'Tap + to create the first bill'}
+              {debouncedSearch || activeFilterCount > 0 ? 'Try adjusting your search or filters' : 'Tap + to create the first bill'}
             </p>
           </div>
         ) : (
@@ -469,6 +562,159 @@ export default function Bills({ onTabChange }) {
           onConfirm={handleCollectPartialSubmit}
         />
       )}
+
+      {showFilterPanel && (
+        <FilterPanel
+          filters={filters}
+          onApply={(f) => { setFilters(f); setPage(1) }}
+          onClose={() => setShowFilterPanel(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ── Filter Panel ───────────────────────────────────────────────────────── */
+
+function FilterPanel({ filters, onApply, onClose }) {
+  const [draft, setDraft] = useState({ ...filters })
+
+  const set = (field, value) => setDraft(d => ({ ...d, [field]: value }))
+
+  const handleApply = () => { onApply(draft); onClose() }
+
+  const handleReset = () => {
+    const blank = { billType: 'ALL', paymentStatus: 'ALL', dateMode: 'NONE', date: '', dateFrom: '', dateTo: '' }
+    onApply(blank)
+    onClose()
+  }
+
+  const BILL_TYPE_OPTS = [
+    { value: 'ALL', label: 'All Types' },
+    { value: 'IPD', label: '🏥 IPD' },
+    { value: 'OPD', label: '🩺 OPD' },
+  ]
+  const PAYMENT_OPTS = [
+    { value: 'ALL',     label: 'All',            color: 'gray' },
+    { value: 'PAID',    label: '✅ Paid',         color: 'green' },
+    { value: 'UNPAID',  label: '⏳ Unpaid',       color: 'red' },
+    { value: 'PARTIAL', label: '💰 Partially Paid', color: 'amber' },
+  ]
+
+  const chipCls = (active, color) => {
+    const base = 'px-3 py-1.5 rounded-full text-xs font-medium border transition cursor-pointer'
+    if (!active) return `${base} bg-white text-gray-600 border-gray-200 hover:border-gray-400`
+    const map = {
+      gray:  'bg-gray-800 text-white border-gray-800',
+      green: 'bg-green-600 text-white border-green-600',
+      blue:  'bg-blue-700 text-white border-blue-700',
+      red:   'bg-red-600 text-white border-red-600',
+      amber: 'bg-amber-500 text-white border-amber-500',
+    }
+    return `${base} ${map[color] ?? map.gray}`
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100">
+          <h3 className="text-base font-bold text-gray-800">Filter Bills</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4 space-y-5 max-h-[65vh] overflow-y-auto">
+
+          {/* ── Bill Type ── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Bill Type</p>
+            <div className="flex gap-2 flex-wrap">
+              {BILL_TYPE_OPTS.map(({ value, label }) => (
+                <button key={value} onClick={() => set('billType', value)}
+                  className={chipCls(draft.billType === value, value === 'OPD' ? 'green' : value === 'IPD' ? 'blue' : 'gray')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Payment Status ── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Payment Status</p>
+            <div className="flex gap-2 flex-wrap">
+              {PAYMENT_OPTS.map(({ value, label, color }) => (
+                <button key={value} onClick={() => set('paymentStatus', value)}
+                  className={chipCls(draft.paymentStatus === value, color)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Date ── */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Date</p>
+            <div className="flex gap-2 flex-wrap mb-3">
+              {[
+                { value: 'NONE',   label: 'Any Date' },
+                { value: 'SINGLE', label: 'Specific Date' },
+                { value: 'RANGE',  label: 'Date Range' },
+              ].map(({ value, label }) => (
+                <button key={value} onClick={() => set('dateMode', value)}
+                  className={chipCls(draft.dateMode === value, 'gray')}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {draft.dateMode === 'SINGLE' && (
+              <input
+                type="date" value={draft.date}
+                onChange={(e) => set('date', e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+              />
+            )}
+
+            {draft.dateMode === 'RANGE' && (
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">From</label>
+                  <input
+                    type="date" value={draft.dateFrom}
+                    onChange={(e) => set('dateFrom', e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">To</label>
+                  <input
+                    type="date" value={draft.dateTo}
+                    min={draft.dateFrom || undefined}
+                    onChange={(e) => set('dateTo', e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 px-5 py-4 border-t border-gray-100">
+          <button onClick={handleReset}
+            className="flex-1 border border-gray-300 text-gray-600 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition">
+            Reset All
+          </button>
+          <button onClick={handleApply}
+            className="flex-1 bg-blue-700 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-blue-800 active:scale-95 transition">
+            Apply Filters
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
