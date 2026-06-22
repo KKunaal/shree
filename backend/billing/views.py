@@ -222,7 +222,14 @@ class BillPaymentAPIView(APIView):
         payment_ser = BillPaymentSerializer(bill, data=request.data, partial=True)
         payment_ser.is_valid(raise_exception=True)
         payment_ser.save()
-        # Return the full bill so the frontend can update its state directly
+        # Auto-manage callout based on new status
+        if bill.payment_status == "PAID" and bill.callout != "Bill settled":
+            bill.callout = "Bill settled"
+            bill.save(update_fields=["callout"])
+        elif bill.payment_status != "PAID" and bill.callout == "Bill settled":
+            # Doctor moved back from PAID — clear the settled callout
+            bill.callout = ""
+            bill.save(update_fields=["callout"])
         return Response(BillSerializer(bill).data)
 
 
@@ -230,14 +237,13 @@ class BillCollectPartialAPIView(APIView):
     """
     POST /api/bills/<id>/collect-partial/   (doctor only)
 
-    Splits a bill's net payable into two parts:
-      • Original bill: total_bill & net_bill each reduced by `amount`,
-                       payment_status → PARTIAL
-      • New bill:      duplicate patient info, single line item for `amount`,
-                       net_bill = amount, payment_status = UNPAID
+    Records a partial collection on an UNPAID bill:
+      • Adds a "Partial Collection for {TYPE} #{NO}" line item (informational)
+      • Sets payment_status → PARTIAL
+      • Sets callout → "Partially collected"
 
     Body: { "amount": "250.00" }
-    Returns: { "original": <bill>, "new_bill": <bill> }
+    Returns: updated bill
 
     Constraints:
       - bill must be UNPAID
@@ -247,14 +253,13 @@ class BillCollectPartialAPIView(APIView):
     permission_classes = [IsAuthenticated, IsDoctor]
 
     def post(self, request, pk):
-        from django.db import transaction
         from django.shortcuts import get_object_or_404
 
         bill = get_object_or_404(Bill, pk=pk)
 
         if bill.payment_status != Bill.PaymentStatus.UNPAID:
             return Response(
-                {"detail": "Only UNPAID bills can be split. Change status to UNPAID first."},
+                {"detail": "Only UNPAID bills can have a partial collection recorded."},
                 status=400,
             )
 
@@ -273,92 +278,24 @@ class BillCollectPartialAPIView(APIView):
                 status=400,
             )
 
-        with transaction.atomic():
-            # ── 1. Reduce original bill & mark PARTIAL ────────────────────────
-            # Reduce both total_bill and net_bill so the invariant
-            # net_bill = total_bill - advance_paid - discount stays intact.
-            # Also append a negative line item so line_items still sum to total_bill.
-            orig_no = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
-            split_label = f"Partial Collection for {bill.bill_type} #{orig_no}"
+        orig_no     = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
+        split_label = f"Partial Collection for {bill.bill_type} #{orig_no}"
 
-            updated_items = list(bill.line_items) + [{
-                "name":         split_label,
-                "rate_per_day": str(-amount),
-                "days":         1,
-                "amount":       str(-amount),
-            }]
-            bill.line_items = updated_items
-            bill.total_bill = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
-            bill.net_bill   = (net - amount).quantize(Decimal("0.01"))
-            bill.payment_status = Bill.PaymentStatus.PARTIAL
-            bill.save()  # pre_save/post_save signals update Metrics
+        # Append a negative deduction line item so line_items still sum to total_bill
+        bill.line_items = list(bill.line_items) + [{
+            "name":         split_label,
+            "rate_per_day": str(-amount),
+            "days":         1,
+            "amount":       str(-amount),
+        }]
+        # Reduce total_bill and net_bill so net payable on the card updates correctly
+        bill.total_bill = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
+        bill.net_bill   = (net - amount).quantize(Decimal("0.01"))
+        bill.payment_status = Bill.PaymentStatus.PARTIAL
+        bill.callout = "Partially collected"
+        bill.save()  # pre_save/post_save signals update Metrics
 
-            # ── 2. Auto-assign next bill number ───────────────────────────────
-            field = "ipd_no" if bill.bill_type == "IPD" else "opd_no"
-            existing = (
-                Bill.objects
-                .filter(bill_type=bill.bill_type)
-                .exclude(**{f"{field}__isnull": True})
-                .select_for_update()
-                .values_list(field, flat=True)
-            )
-            max_val = 0
-            for val in existing:
-                try:
-                    max_val = max(max_val, int(val))
-                except (ValueError, TypeError):
-                    pass
-            new_bill_no = str(max_val + 1)
-
-            # ── 3. Create new UNPAID bill for the split amount ─────────────────
-            new_kwargs = dict(
-                bill_type       = bill.bill_type,
-                patient_name    = bill.patient_name,
-                address         = bill.address,
-                mobile_no       = bill.mobile_no,
-                gender          = bill.gender,
-                age             = bill.age,
-                weight          = bill.weight,
-                height          = bill.height,
-                pulse_rate      = bill.pulse_rate,
-                line_items      = [{
-                    "name":         split_label,
-                    "rate_per_day": str(amount),
-                    "days":         1,
-                    "amount":       str(amount),
-                }],
-                total_bill      = amount,
-                advance_paid    = Decimal("0.00"),
-                advance_paid_via= bill.advance_paid_via,
-                net_bill        = amount,
-                payment_status  = Bill.PaymentStatus.UNPAID,
-                paid_via        = bill.paid_via,
-            )
-            if bill.bill_type == "IPD":
-                new_kwargs.update(
-                    ipd_no       = new_bill_no,
-                    admitted_on  = bill.admitted_on,
-                    discharged_on= bill.discharged_on,
-                    room_no      = bill.room_no,
-                    ward         = bill.ward,
-                    total_stay   = bill.total_stay,
-                )
-            else:
-                new_kwargs.update(
-                    opd_no    = new_bill_no,
-                    visit_date= bill.visit_date,
-                )
-
-            new_bill = Bill.objects.create(**new_kwargs)
-            # new_bill is UNPAID → no Metrics update fired
-
-        return Response(
-            {
-                "original": BillSerializer(bill).data,
-                "new_bill": BillSerializer(new_bill).data,
-            },
-            status=201,
-        )
+        return Response(BillSerializer(bill).data, status=200)
 
 
 class MetricsRefreshAPIView(APIView):
