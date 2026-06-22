@@ -311,7 +311,7 @@ class BillCollectPartialAPIView(APIView):
                 height          = bill.height,
                 pulse_rate      = bill.pulse_rate,
                 line_items      = [{
-                    "name":         "Partial Collection",
+                    "name":         f"Partial Collection for {bill.bill_type} #{bill.opd_no if bill.bill_type == 'OPD' else bill.ipd_no}",
                     "rate_per_day": str(amount),
                     "days":         1,
                     "amount":       str(amount),
