@@ -33,7 +33,8 @@ export default function Queue({ onTabChange }) {
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState('WAITING')
+  const [summary, setSummary] = useState({ all: 0, waiting: 0, with_doctor: 0, done: 0 })
   const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
 
@@ -60,14 +61,16 @@ export default function Queue({ onTabChange }) {
     setLoading(true)
     try {
       const params = new URLSearchParams({ date: todayISO() })
+      if (statusFilter !== 'ALL') params.set('status', statusFilter)
       const res = await apiClient.get(`/queue/?${params}`)
       setItems(res.data.results ?? res.data)
+      setSummary(res.data.summary ?? { all: 0, waiting: 0, with_doctor: 0, done: 0 })
     } catch (err) {
       if (err.response?.status === 401) logout()
     } finally {
       setLoading(false)
     }
-  }, [apiClient, logout, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apiClient, logout, statusFilter, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchQueue() }, [fetchQueue])
 
@@ -80,7 +83,11 @@ export default function Queue({ onTabChange }) {
   }, [openMenu])
 
   const handlePatientCreated = (queueData) => {
-    setItems((prev) => [...prev, queueData].sort((a, b) => a.queue_number - b.queue_number))
+    // New patients always start as WAITING — only add to visible list if filter matches
+    if (statusFilter === 'ALL' || statusFilter === 'WAITING') {
+      setItems((prev) => [...prev, queueData].sort((a, b) => a.queue_number - b.queue_number))
+    }
+    setSummary((s) => ({ ...s, all: s.all + 1, waiting: s.waiting + 1 }))
     showToast('✓ Patient added to queue')
   }
 
@@ -98,7 +105,11 @@ export default function Queue({ onTabChange }) {
     const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length]
     try {
       const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: next })
-      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      if (statusFilter !== 'ALL' && data.status !== statusFilter) {
+        setItems((prev) => prev.filter((i) => i.id !== queueItem.id))
+      } else {
+        setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      }
     } catch {
       showToast('⚠ Failed to update status', 'error')
     }
@@ -107,7 +118,11 @@ export default function Queue({ onTabChange }) {
   const handleMoveToWithDoctor = async (queueItem) => {
     try {
       const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'WITH_DOCTOR' })
-      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      if (statusFilter !== 'ALL' && statusFilter !== 'WITH_DOCTOR') {
+        setItems((prev) => prev.filter((i) => i.id !== queueItem.id))
+      } else {
+        setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      }
       showToast('✓ Moved to With Doctor')
     } catch {
       showToast('⚠ Failed to update status', 'error')
@@ -133,7 +148,11 @@ export default function Queue({ onTabChange }) {
   const markQueueItemDone = async (queueItem) => {
     try {
       const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'DONE' })
-      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      if (statusFilter !== 'ALL' && statusFilter !== 'DONE') {
+        setItems((prev) => prev.filter((i) => i.id !== queueItem.id))
+      } else {
+        setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      }
     } catch {
       showToast('⚠ Bill saved but failed to mark patient as Done', 'error')
     }
@@ -142,7 +161,11 @@ export default function Queue({ onTabChange }) {
   const handleMoveToWaiting = async (queueItem) => {
     try {
       const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'WAITING' })
-      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      if (statusFilter !== 'ALL' && statusFilter !== 'WAITING') {
+        setItems((prev) => prev.filter((i) => i.id !== queueItem.id))
+      } else {
+        setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      }
       showToast('✓ Moved back to Waiting')
     } catch {
       showToast('⚠ Failed to update status', 'error')
@@ -197,19 +220,12 @@ export default function Queue({ onTabChange }) {
     }
   }
 
-  // Reception sees all patients (WAITING, WITH_DOCTOR, DONE) — same as doctor
-  // WITH_DOCTOR cards will have all actions disabled for reception via receptionLocked
-  const visibleItems = items
-
-  const filtered = statusFilter === 'ALL'
-    ? visibleItems
-    : visibleItems.filter((i) => i.status === statusFilter)
-
+  // Counts come from the server summary — always reflect today's full queue
   const counts = {
-    ALL:         items.length,
-    WAITING:     items.filter((i) => i.status === 'WAITING').length,
-    WITH_DOCTOR: items.filter((i) => i.status === 'WITH_DOCTOR').length,
-    DONE:        items.filter((i) => i.status === 'DONE').length,
+    ALL:         summary.all,
+    WAITING:     summary.waiting,
+    WITH_DOCTOR: summary.with_doctor,
+    DONE:        summary.done,
   }
 
   return (
@@ -239,9 +255,9 @@ export default function Queue({ onTabChange }) {
           {/* Queue — active */}
           <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
             🏥 Queue
-            {counts.WAITING > 0 && (
+            {summary.waiting > 0 && (
               <span className="ml-2 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
-                {counts.WAITING}
+                {summary.waiting}
               </span>
             )}
           </button>
@@ -254,24 +270,20 @@ export default function Queue({ onTabChange }) {
         </div>
       </div>
 
-      {/* ── Status filter tabs ── */}
+      {/* ── Status filter dropdown ── */}
       <div className="max-w-2xl mx-auto w-full px-4 pt-4">
-        <div className="flex gap-2 flex-wrap">
-          {[
-            { key: 'ALL',         label: `All (${counts.ALL})` },
-            { key: 'WAITING',     label: `⏳ Waiting (${counts.WAITING})` },
-            { key: 'WITH_DOCTOR', label: `👨‍⚕️ With Doctor (${counts.WITH_DOCTOR})` },
-            { key: 'DONE',        label: `✅ Done (${counts.DONE})` },
-          ].map(({ key, label }) => (
-            <button key={key} onClick={() => setStatusFilter(key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition
-                ${statusFilter === key
-                  ? 'bg-blue-700 text-white border-blue-700'
-                  : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-gray-500 whitespace-nowrap">Status:</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300 cursor-pointer"
+          >
+            <option value="ALL">All ({counts.ALL})</option>
+            <option value="WAITING">⏳ Waiting ({counts.WAITING})</option>
+            <option value="WITH_DOCTOR">👨‍⚕️ With Doctor ({counts.WITH_DOCTOR})</option>
+            <option value="DONE">✅ Done ({counts.DONE})</option>
+          </select>
         </div>
       </div>
 
@@ -282,7 +294,7 @@ export default function Queue({ onTabChange }) {
             <div className="text-4xl animate-spin mb-3">⏳</div>
             <p className="text-sm">Loading queue…</p>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-gray-400">
             <p className="text-5xl mb-3">🏥</p>
             <p className="font-medium text-gray-600">
@@ -291,7 +303,7 @@ export default function Queue({ onTabChange }) {
             <p className="text-xs mt-1">Tap the + button below to add a patient</p>
           </div>
         ) : (
-          filtered.map((item) => (
+          items.map((item) => (
             <QueueCard
               key={item.id}
               item={item}

@@ -633,7 +633,9 @@ class PatientBasicProfileDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
 class QueueListCreateAPIView(generics.ListCreateAPIView):
     """
-    GET  /api/queue/   → today's queue  (?date=YYYY-MM-DD  ?status=WAITING)
+    GET  /api/queue/   → today's queue
+                         ?date=YYYY-MM-DD                 — defaults to today
+                         ?status=WAITING|WITH_DOCTOR|DONE — filter by status
     POST /api/queue/   → manually create a queue entry (rarely needed)
     """
     serializer_class = QueueSerializer
@@ -644,10 +646,23 @@ class QueueListCreateAPIView(generics.ListCreateAPIView):
         date_str = self.request.query_params.get("date")
         date = date_str or str(timezone.localdate())
         qs = Queue.objects.filter(date=date).select_related("patient")
-        status = self.request.query_params.get("status")
-        if status:
-            qs = qs.filter(status=status.upper())
+        status = self.request.query_params.get("status", "").upper()
+        if status in ("WAITING", "WITH_DOCTOR", "DONE"):
+            qs = qs.filter(status=status)
         return qs
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        date_str = request.query_params.get("date")
+        date = date_str or str(timezone.localdate())
+        base = Queue.objects.filter(date=date)
+        response.data["summary"] = {
+            "all":         base.count(),
+            "waiting":     base.filter(status="WAITING").count(),
+            "with_doctor": base.filter(status="WITH_DOCTOR").count(),
+            "done":        base.filter(status="DONE").count(),
+        }
+        return response
 
 
 class QueueDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
