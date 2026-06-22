@@ -5,15 +5,13 @@ Transitions handled per payment_status:
 
   → PAID    : count bill; add advance_paid (via advance_paid_via) +
               net_bill (via paid_via) to method buckets + total_collected
-  → PARTIAL : count partial bill; add advance_paid (via advance_paid_via) +
-              partial_amount (via partial_amount_via) to method buckets;
-              update total_partial_bills / total_partial_collected
+  → PARTIAL : advance_paid already received at reception — count partial bill;
+              add advance_paid (via advance_paid_via) to method buckets +
+              total_partial_bills / total_partial_collected.
+              Does NOT touch total_collected (bill not fully settled).
   → UNPAID  : no-op (or reverse whichever status it came from)
 
-Any transition (UNPAID↔PAID, UNPAID↔PARTIAL, PAID↔PARTIAL) uses the
-"subtract old, add new" pattern — handled generically in the PAID→PAID branch
-by comparing the full old state vs new state.
-
+Any transition uses the "subtract old, add new" pattern.
 All writes use atomic F() expressions — no read-modify-write races.
 """
 
@@ -51,23 +49,19 @@ def _apply_bill(updates: dict, state, sign: int) -> None:
     Works for PAID, PARTIAL, and UNPAID (UNPAID is a no-op).
     """
     if isinstance(state, dict):
-        status          = state["payment_status"]
-        bill_type       = state["bill_type"]
-        advance         = Decimal(str(state["advance_paid"]))
-        adv_via         = state.get("advance_paid_via") or "CASH"
-        net             = Decimal(str(state["net_bill"]))
-        net_via         = state["paid_via"]
-        partial         = Decimal(str(state.get("partial_amount") or "0"))
-        partial_via     = state.get("partial_amount_via") or "CASH"
+        status    = state["payment_status"]
+        bill_type = state["bill_type"]
+        advance   = Decimal(str(state["advance_paid"]))
+        adv_via   = state.get("advance_paid_via") or "CASH"
+        net       = Decimal(str(state["net_bill"]))
+        net_via   = state["paid_via"]
     else:
-        status          = state.payment_status
-        bill_type       = state.bill_type
-        advance         = Decimal(str(state.advance_paid))
-        adv_via         = state.advance_paid_via or "CASH"
-        net             = Decimal(str(state.net_bill))
-        net_via         = state.paid_via
-        partial         = Decimal(str(state.partial_amount))
-        partial_via     = state.partial_amount_via or "CASH"
+        status    = state.payment_status
+        bill_type = state.bill_type
+        advance   = Decimal(str(state.advance_paid))
+        adv_via   = state.advance_paid_via or "CASH"
+        net       = Decimal(str(state.net_bill))
+        net_via   = state.paid_via
 
     if status == "PAID":
         _add_to(updates, _count_field(bill_type), sign)
@@ -76,13 +70,11 @@ def _apply_bill(updates: dict, state, sign: int) -> None:
         _add_to(updates, _via_field(net_via), sign * net)
 
     elif status == "PARTIAL":
+        # Only advance_paid is the partially collected amount.
+        # Does NOT touch total_collected — bill is not fully settled.
         _add_to(updates, "total_partial_bills",     sign)
-        _add_to(updates, "total_partial_collected", sign * partial)
-        # advance + partial go to their respective method buckets
-        _add_to(updates, _via_field(adv_via),    sign * advance)
-        _add_to(updates, _via_field(partial_via), sign * partial)
-        # they also count toward total_collected
-        _add_to(updates, "total_collected", sign * (advance + partial))
+        _add_to(updates, "total_partial_collected", sign * advance)
+        _add_to(updates, _via_field(adv_via),       sign * advance)
     # UNPAID → no-op
 
 
@@ -100,7 +92,7 @@ def _capture_bill_state(sender, instance, **kwargs):
     try:
         instance._pre_state = Bill.objects.values(
             "bill_type", "net_bill", "advance_paid", "advance_paid_via",
-            "payment_status", "paid_via", "partial_amount", "partial_amount_via",
+            "payment_status", "paid_via",
         ).get(pk=instance.pk)
     except Bill.DoesNotExist:
         instance._pre_state = None

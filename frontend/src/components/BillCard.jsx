@@ -20,13 +20,10 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
-  const [showPartialEntry, setShowPartialEntry] = useState(false)
-  const [partialAmt, setPartialAmt] = useState('')
-  const [partialVia, setPartialVia] = useState('CASH')
   const menuRef = useRef(null)
 
-  const isOPD = bill.bill_type === 'OPD'
-  const isPaid = bill.payment_status === 'PAID'
+  const isOPD     = bill.bill_type === 'OPD'
+  const isPaid    = bill.payment_status === 'PAID'
   const isPartial = bill.payment_status === 'PARTIAL'
   const hasAdvance = parseFloat(bill.advance_paid) > 0
   const hasDiscount = parseFloat(bill.discount) > 0
@@ -55,20 +52,7 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
 
   const changeStatus = (newStatus) => {
     if (newStatus === bill.payment_status) return
-    if (newStatus === 'PARTIAL') {
-      setShowPartialEntry(true)
-      setPartialAmt('')
-      setPartialVia('CASH')
-      return
-    }
-    setShowPartialEntry(false)
     savePayment({ payment_status: newStatus, paid_via: bill.paid_via || 'CASH' })
-  }
-
-  const savePartial = () => {
-    if (!partialAmt || parseFloat(partialAmt) <= 0) return
-    savePayment({ payment_status: 'PARTIAL', partial_amount: partialAmt, partial_amount_via: partialVia })
-    setShowPartialEntry(false)
   }
 
   const changePaidVia = (newValue) => {
@@ -184,10 +168,10 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
 
       {/* ── Payment bar (always visible) ─────────────────────────────────── */}
       <div
-        className="flex flex-col gap-2 px-4 pb-3"
+        className="flex items-center gap-2 flex-wrap px-4 pb-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap w-full">
           {/* 3-state status dropdown */}
           <PayStatusSelector
             value={bill.payment_status}
@@ -204,10 +188,10 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
             />
           )}
 
-          {/* Partial summary chip (when already partial and not editing) */}
-          {isPartial && !showPartialEntry && parseFloat(bill.partial_amount) > 0 && (
+          {/* Partial summary chip — shows the advance already received */}
+          {isPartial && parseFloat(bill.advance_paid) > 0 && (
             <span className="text-[10px] text-yellow-700 bg-yellow-50 border border-yellow-100 px-2 py-1 rounded-lg ml-auto">
-              {fmt(bill.partial_amount)} · {PAID_VIA_LABELS[bill.partial_amount_via] || bill.partial_amount_via}
+              {fmt(bill.advance_paid)} received · {PAID_VIA_LABELS[bill.advance_paid_via] || bill.advance_paid_via || 'Cash'}
             </span>
           )}
 
@@ -217,38 +201,6 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
             </span>
           )}
         </div>
-
-        {/* Partial amount entry row */}
-        {showPartialEntry && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <input
-              type="number"
-              placeholder="Partial amount ₹"
-              value={partialAmt}
-              onChange={(e) => setPartialAmt(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-              className="w-36 text-sm border border-yellow-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-300 bg-yellow-50"
-            />
-            <PayViaSelector
-              value={partialVia}
-              disabled={paymentSaving}
-              onChange={setPartialVia}
-            />
-            <button
-              disabled={paymentSaving || !partialAmt || parseFloat(partialAmt) <= 0}
-              onClick={savePartial}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg border bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100 disabled:opacity-60 active:scale-95 transition"
-            >
-              {paymentSaving ? '⏳' : 'Save'}
-            </button>
-            <button
-              onClick={() => setShowPartialEntry(false)}
-              className="text-xs text-gray-400 hover:text-gray-600 px-1"
-            >
-              ✕
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Expanded detail */}

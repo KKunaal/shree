@@ -166,13 +166,10 @@ class MetricsAPIView(APIView):
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
         partial_agg = today_partial.aggregate(
-            total_partial=Sum("partial_amount"),
+            total_partial=Sum("advance_paid"),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
             upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
             online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
-            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
-            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
-            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
@@ -198,11 +195,11 @@ class MetricsAPIView(APIView):
             "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
             "today_collected":    str(today_agg["total"] or Z),
             "today_cash":         str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)
-                                      + (partial_agg["cash_adv"] or Z) + (partial_agg["cash_part"] or Z)),
+                                      + (partial_agg["cash_adv"] or Z)),
             "today_upi":          str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)
-                                      + (partial_agg["upi_adv"] or Z) + (partial_agg["upi_part"] or Z)),
+                                      + (partial_agg["upi_adv"] or Z)),
             "today_online":       str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)
-                                      + (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)),
+                                      + (partial_agg["online_adv"] or Z)),
             "today_partial_bills":     today_partial.count(),
             "today_partial_collected": str(partial_agg["total_partial"] or Z),
             # ── meta ─────────────────────────────────────────────────────────
@@ -270,13 +267,10 @@ class MetricsRefreshAPIView(APIView):
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
         partial_agg = today_partial.aggregate(
-            total_partial=Sum("partial_amount"),
+            total_partial=Sum("advance_paid"),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
             upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
             online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
-            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
-            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
-            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
@@ -301,11 +295,11 @@ class MetricsRefreshAPIView(APIView):
             "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
             "today_collected":    str(today_agg["total"] or Z),
             "today_cash":         str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)
-                                      + (partial_agg["cash_adv"] or Z) + (partial_agg["cash_part"] or Z)),
+                                      + (partial_agg["cash_adv"] or Z)),
             "today_upi":          str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)
-                                      + (partial_agg["upi_adv"] or Z) + (partial_agg["upi_part"] or Z)),
+                                      + (partial_agg["upi_adv"] or Z)),
             "today_online":       str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)
-                                      + (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)),
+                                      + (partial_agg["online_adv"] or Z)),
             "today_partial_bills":     today_partial.count(),
             "today_partial_collected": str(partial_agg["total_partial"] or Z),
             # ── meta ──────────────────────────────────────────────────────────

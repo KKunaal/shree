@@ -183,9 +183,10 @@ class Metrics(models.Model):
 
         PAID bills:    advance_paid → advance_paid_via bucket
                        net_bill     → paid_via bucket
-        PARTIAL bills: advance_paid → advance_paid_via bucket (still collected)
-                       partial_amount → partial_amount_via bucket
+                       both → total_collected
+        PARTIAL bills: advance_paid → advance_paid_via bucket (received at reception)
                        counted in total_partial_bills / total_partial_collected
+                       does NOT go to total_collected (not fully settled)
         """
         from django.db.models import ExpressionWrapper, F, Q, Sum
         from django.db.models import DecimalField as DDF
@@ -207,15 +208,12 @@ class Metrics(models.Model):
             upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
+        # PARTIAL: advance_paid is the only amount received
         partial_agg = partial.aggregate(
-            total_partial=Sum("partial_amount"),
-            # advance on partial bills also routes to cash/upi/online
+            total_partial=Sum("advance_paid"),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
             upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
             online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
-            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
-            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
-            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
         )
 
         Z = Decimal("0.00")
@@ -226,10 +224,10 @@ class Metrics(models.Model):
         obj.total_cash    = (paid_agg["cash_adv"]   or Z) + (paid_agg["cash_net"]   or Z)
         obj.total_upi     = (paid_agg["upi_adv"]    or Z) + (paid_agg["upi_net"]    or Z)
         obj.total_online  = (paid_agg["online_adv"] or Z) + (paid_agg["online_net"] or Z)
-        # partial bills — also add their advance + partial_amount into method buckets
-        obj.total_cash   += (partial_agg["cash_adv"]   or Z) + (partial_agg["cash_part"]   or Z)
-        obj.total_upi    += (partial_agg["upi_adv"]    or Z) + (partial_agg["upi_part"]    or Z)
-        obj.total_online += (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)
+        # partial bills — advance also routes to method buckets
+        obj.total_cash   += (partial_agg["cash_adv"]   or Z)
+        obj.total_upi    += (partial_agg["upi_adv"]    or Z)
+        obj.total_online += (partial_agg["online_adv"] or Z)
         obj.total_partial_bills     = partial.count()
         obj.total_partial_collected = partial_agg["total_partial"] or Z
         obj.save()
