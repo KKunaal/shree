@@ -342,6 +342,9 @@ function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCyc
   const { patient, queue_number, status } = item
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.WAITING
 
+  // Reception loses Edit + Remove once a patient has left the WAITING state
+  const receptionLocked = !isDoctor && (status === 'WITH_DOCTOR' || status === 'DONE')
+
   const activeConditions = Object.keys(CONDITIONS_LABELS).filter((k) => patient[k])
 
   const genderLabel = patient.gender === 'M' ? 'Male' : patient.gender === 'F' ? 'Female' : patient.gender === 'O' ? 'Other' : null
@@ -392,9 +395,9 @@ function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCyc
                 <MenuOption icon="⬆️" label="Move Up"       onClick={onMoveUp} disabled={isFirst} />
                 <div className="my-1 border-t border-gray-100" />
                 {/* ── Management actions ── */}
-                <MenuOption icon="✏️" label="Edit Patient"  onClick={onEdit} />
+                <MenuOption icon="✏️" label="Edit Patient"  onClick={onEdit}        disabled={receptionLocked} />
                 <MenuOption icon="🧾" label="Create Bill"   onClick={onCreateBill} />
-                <MenuOption icon="🗑️" label="Remove"        onClick={onDelete} danger />
+                <MenuOption icon="🗑️" label="Remove"        onClick={onDelete}      disabled={receptionLocked} danger />
               </div>
             )}
           </div>
