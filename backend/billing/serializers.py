@@ -40,7 +40,7 @@ class BillSerializer(serializers.ModelSerializer):
             "patient_name", "address", "mobile_no", "gender", "weight", "height", "age", "pulse_rate",
             "line_items",
             "total_bill", "advance_paid", "advance_paid_via", "discount", "discount_note", "net_bill",
-            "payment_status", "paid_via",
+            "payment_status", "paid_via", "partial_amount", "partial_amount_via",
             "remote_row_ref", "created_at",
         ]
         read_only_fields = (
@@ -193,7 +193,7 @@ class BillPaymentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Bill
-        fields = ["id", "payment_status", "paid_via"]
+        fields = ["id", "payment_status", "paid_via", "partial_amount", "partial_amount_via"]
 
 
 class PatientBasicProfileSerializer(serializers.ModelSerializer):

@@ -10,14 +10,24 @@ const fmtDate = (d) =>
 
 const PAID_VIA_LABELS = { CASH: '💵 Cash', UPI: '📲 UPI', ONLINE: '🌐 Online' }
 
+const STATUS_BADGE = {
+  PAID:    { cls: 'bg-emerald-100 text-emerald-700', label: '✓ Paid'     },
+  PARTIAL: { cls: 'bg-yellow-100  text-yellow-700',  label: '◑ Partial'  },
+  UNPAID:  { cls: 'bg-orange-100  text-orange-700',  label: '⏳ Unpaid'  },
+}
+
 export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange }) {
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
+  const [showPartialEntry, setShowPartialEntry] = useState(false)
+  const [partialAmt, setPartialAmt] = useState('')
+  const [partialVia, setPartialVia] = useState('CASH')
   const menuRef = useRef(null)
 
   const isOPD = bill.bill_type === 'OPD'
   const isPaid = bill.payment_status === 'PAID'
+  const isPartial = bill.payment_status === 'PARTIAL'
   const hasAdvance = parseFloat(bill.advance_paid) > 0
   const hasDiscount = parseFloat(bill.discount) > 0
   const accentText = isOPD ? 'text-green-700' : 'text-blue-700'
@@ -43,9 +53,22 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
     }
   }
 
-  const toggleStatus = (e) => {
-    e.stopPropagation()
-    savePayment({ payment_status: isPaid ? 'UNPAID' : 'PAID', paid_via: bill.paid_via })
+  const changeStatus = (newStatus) => {
+    if (newStatus === bill.payment_status) return
+    if (newStatus === 'PARTIAL') {
+      setShowPartialEntry(true)
+      setPartialAmt('')
+      setPartialVia('CASH')
+      return
+    }
+    setShowPartialEntry(false)
+    savePayment({ payment_status: newStatus, paid_via: bill.paid_via || 'CASH' })
+  }
+
+  const savePartial = () => {
+    if (!partialAmt || parseFloat(partialAmt) <= 0) return
+    savePayment({ payment_status: 'PARTIAL', partial_amount: partialAmt, partial_amount_via: partialVia })
+    setShowPartialEntry(false)
   }
 
   const changePaidVia = (newValue) => {
@@ -67,9 +90,8 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
               {isOPD ? '🩺 OPD' : '🏥 IPD'}
             </span>
             {/* Payment status badge */}
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0
-              ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-              {isPaid ? '✓ Paid' : '⏳ Unpaid'}
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_BADGE[bill.payment_status]?.cls ?? 'bg-orange-100 text-orange-700'}`}>
+              {STATUS_BADGE[bill.payment_status]?.label ?? '⏳ Unpaid'}
             </span>
             {bill.remote_row_ref && (
               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">
@@ -162,39 +184,70 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
 
       {/* ── Payment bar (always visible) ─────────────────────────────────── */}
       <div
-        className="flex items-center gap-2 px-4 pb-3"
+        className="flex flex-col gap-2 px-4 pb-3"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Status toggle */}
-        <button
-          disabled={paymentSaving}
-          onClick={toggleStatus}
-          className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition active:scale-95 disabled:opacity-60
-            ${isPaid
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-              : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100'
-            }`}
-        >
-          {paymentSaving ? (
-            <span className="animate-spin text-base leading-none">⏳</span>
-          ) : isPaid ? (
-            <><span>✓</span> Paid — tap to undo</>
-          ) : (
-            <><span>○</span> Mark as Paid</>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 3-state status dropdown */}
+          <PayStatusSelector
+            value={bill.payment_status}
+            disabled={paymentSaving}
+            onChange={changeStatus}
+          />
+
+          {/* Payment via (PAID only) */}
+          {isPaid && (
+            <PayViaSelector
+              value={bill.paid_via || 'CASH'}
+              disabled={paymentSaving}
+              onChange={changePaidVia}
+            />
           )}
-        </button>
 
-        {/* Payment method — custom dropdown so mobile renders consistently */}
-        <PayViaSelector
-          value={bill.paid_via || 'UPI'}
-          disabled={paymentSaving}
-          onChange={changePaidVia}
-        />
+          {/* Partial summary chip (when already partial and not editing) */}
+          {isPartial && !showPartialEntry && parseFloat(bill.partial_amount) > 0 && (
+            <span className="text-[10px] text-yellow-700 bg-yellow-50 border border-yellow-100 px-2 py-1 rounded-lg ml-auto">
+              {fmt(bill.partial_amount)} · {PAID_VIA_LABELS[bill.partial_amount_via] || bill.partial_amount_via}
+            </span>
+          )}
 
-        {isPaid && (
-          <span className="text-[10px] text-gray-400 ml-auto">
-            via {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
-          </span>
+          {isPaid && (
+            <span className="text-[10px] text-gray-400 ml-auto">
+              via {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
+            </span>
+          )}
+        </div>
+
+        {/* Partial amount entry row */}
+        {showPartialEntry && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <input
+              type="number"
+              placeholder="Partial amount ₹"
+              value={partialAmt}
+              onChange={(e) => setPartialAmt(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              className="w-36 text-sm border border-yellow-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-300 bg-yellow-50"
+            />
+            <PayViaSelector
+              value={partialVia}
+              disabled={paymentSaving}
+              onChange={setPartialVia}
+            />
+            <button
+              disabled={paymentSaving || !partialAmt || parseFloat(partialAmt) <= 0}
+              onClick={savePartial}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg border bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100 disabled:opacity-60 active:scale-95 transition"
+            >
+              {paymentSaving ? '⏳' : 'Save'}
+            </button>
+            <button
+              onClick={() => setShowPartialEntry(false)}
+              className="text-xs text-gray-400 hover:text-gray-600 px-1"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
 
@@ -249,6 +302,63 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
           ) : (
             <p className="text-xs text-gray-400 py-1">No line items recorded.</p>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── 3-state payment status dropdown ───────────────────────────────────── */
+
+const STATUS_OPTIONS = [
+  { value: 'UNPAID',  label: '○ Unpaid',         cls: 'text-orange-700',  bg: 'bg-orange-50  border-orange-200  hover:bg-orange-100'  },
+  { value: 'PARTIAL', label: '◑ Partially Paid', cls: 'text-yellow-700',  bg: 'bg-yellow-50  border-yellow-200  hover:bg-yellow-100'  },
+  { value: 'PAID',    label: '✓ Paid',            cls: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' },
+]
+
+function PayStatusSelector({ value, disabled, onChange }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  const current = STATUS_OPTIONS.find(o => o.value === value) || STATUS_OPTIONS[0]
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('touchstart', close, { passive: true })
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('touchstart', close)
+    }
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); setOpen(o => !o) }}
+        className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition active:scale-95 disabled:opacity-60 select-none ${current.cls} ${current.bg}`}
+      >
+        {disabled
+          ? <span className="animate-spin leading-none">⏳</span>
+          : <>{current.label}<span className="text-[10px] opacity-50 leading-none">▾</span></>
+        }
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-[170px] py-1">
+          {STATUS_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false) }}
+              className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${opt.cls} ${opt.value === value ? 'font-semibold' : ''}`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       )}
     </div>

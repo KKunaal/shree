@@ -122,9 +122,17 @@ export default function Dashboard({ onTabChange }) {
             <div className="grid grid-cols-3 gap-3">
               <MetricCard icon="💵" label="Cash"   value={fAmt(metrics.today_cash)}   color="slate"  />
               <MetricCard icon="📲" label="UPI"    value={fAmt(metrics.today_upi)}    color="violet" />
-              <MetricCard icon="🌐" label="Other
-              " value={fAmt(metrics.today_online)} color="sky"    />
+              <MetricCard icon="🌐" label="Other"  value={fAmt(metrics.today_online)} color="sky"    />
             </div>
+
+            {/* Row 3 — partial payments today (shown only if any exist) */}
+            {metrics.today_partial_bills > 0 && (
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <MetricCard icon="◑"  label="Partial Bills"   value={metrics.today_partial_bills}                                                          color="orange" />
+                <MetricCard icon="💸" label="Partial Paid"    value={fAmt(metrics.today_partial_collected)}                                                color="orange" />
+                <MetricCard icon="〜" label="Avg Partial"     value={fAmt(metrics.today_partial_bills > 0 ? parseFloat(metrics.today_partial_collected) / metrics.today_partial_bills : 0)} color="orange" />
+              </div>
+            )}
           </section>
 
           {/* Divider */}
@@ -159,8 +167,17 @@ export default function Dashboard({ onTabChange }) {
             <div className="grid grid-cols-3 gap-3">
               <MetricCard icon="💵" label="Cash"   value={fAmt(metrics.total_cash)}   color="slate"  />
               <MetricCard icon="📲" label="UPI"    value={fAmt(metrics.total_upi)}    color="violet" />
-              <MetricCard icon="🌐" label="Other" value={fAmt(metrics.total_online)} color="sky"    />
+              <MetricCard icon="🌐" label="Other"  value={fAmt(metrics.total_online)} color="sky"    />
             </div>
+
+            {/* Row 3 — partial payments all-time (shown only if any exist) */}
+            {metrics.total_partial_bills > 0 && (
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.total_partial_bills}            color="orange" />
+                <MetricCard icon="💸" label="Partial Total"  value={fAmt(metrics.total_partial_collected)}  color="orange" />
+                <MetricCard icon="〜" label="Avg Partial"    value={fAmt(metrics.avg_partial_amount)}       color="orange" />
+              </div>
+            )}
           </section>
 
           {/* Footer note */}
@@ -216,6 +233,7 @@ const COLOR_MAP = {
   slate:  { card: 'bg-slate-50 border-slate-100',   text: 'text-slate-700',  icon: 'bg-slate-100'  },
   violet: { card: 'bg-violet-50 border-violet-100', text: 'text-violet-700', icon: 'bg-violet-100' },
   sky:    { card: 'bg-sky-50 border-sky-100',       text: 'text-sky-700',    icon: 'bg-sky-100'    },
+  orange: { card: 'bg-orange-50 border-orange-100', text: 'text-orange-700', icon: 'bg-orange-100' },
 }
 
 function MetricCard({ icon, label, value, color }) {

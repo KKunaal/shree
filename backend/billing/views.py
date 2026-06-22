@@ -154,6 +154,8 @@ class MetricsAPIView(APIView):
         m = Metrics.instance()
 
         today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
+        today_partial = Bill.objects.filter(created_at__date=today, payment_status="PARTIAL")
+
         today_agg = today_paid.aggregate(
             total=Sum(_REVENUE),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
@@ -163,25 +165,48 @@ class MetricsAPIView(APIView):
             upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
+        partial_agg = today_partial.aggregate(
+            total_partial=Sum("partial_amount"),
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
+            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
+            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
+        )
         Z = Decimal("0.00")
+
+        # all-time average partial payment
+        avg_partial = (
+            (m.total_partial_collected / m.total_partial_bills)
+            if m.total_partial_bills else Z
+        )
 
         return Response({
             # ── all-time (from Metrics table, PAID only) ──────────────────────
-            "total_ipd_bills":  m.total_ipd_bills,
-            "total_opd_bills":  m.total_opd_bills,
-            "total_collected":  str(m.total_collected),
-            "total_cash":       str(m.total_cash),
-            "total_upi":        str(m.total_upi),
-            "total_online":     str(m.total_online),
-            # ── today (live, PAID only) ───────────────────────────────────────
-            "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
-            "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
-            "today_collected":  str(today_agg["total"] or Z),
-            "today_cash":       str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)),
-            "today_upi":        str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)),
-            "today_online":     str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)),
-            # ── meta ──────────────────────────────────────────────────────────
-            "as_of":            today.isoformat(),
+            "total_ipd_bills":          m.total_ipd_bills,
+            "total_opd_bills":          m.total_opd_bills,
+            "total_collected":          str(m.total_collected),
+            "total_cash":               str(m.total_cash),
+            "total_upi":                str(m.total_upi),
+            "total_online":             str(m.total_online),
+            "total_partial_bills":      m.total_partial_bills,
+            "total_partial_collected":  str(m.total_partial_collected),
+            "avg_partial_amount":       str(avg_partial.quantize(Decimal("0.01"))),
+            # ── today (live) ─────────────────────────────────────────────────
+            "today_ipd_bills":    today_paid.filter(bill_type="IPD").count(),
+            "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
+            "today_collected":    str(today_agg["total"] or Z),
+            "today_cash":         str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)
+                                      + (partial_agg["cash_adv"] or Z) + (partial_agg["cash_part"] or Z)),
+            "today_upi":          str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)
+                                      + (partial_agg["upi_adv"] or Z) + (partial_agg["upi_part"] or Z)),
+            "today_online":       str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)
+                                      + (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)),
+            "today_partial_bills":     today_partial.count(),
+            "today_partial_collected": str(partial_agg["total_partial"] or Z),
+            # ── meta ─────────────────────────────────────────────────────────
+            "as_of":              today.isoformat(),
             "metrics_updated_at": m.updated_at,
         })
 
@@ -232,7 +257,9 @@ class MetricsRefreshAPIView(APIView):
             from_cache = False
 
         today = timezone.localdate()
-        today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
+        today_paid    = Bill.objects.filter(created_at__date=today, payment_status="PAID")
+        today_partial = Bill.objects.filter(created_at__date=today, payment_status="PARTIAL")
+
         today_agg = today_paid.aggregate(
             total=Sum(_REVENUE),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
@@ -242,28 +269,50 @@ class MetricsRefreshAPIView(APIView):
             upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
+        partial_agg = today_partial.aggregate(
+            total_partial=Sum("partial_amount"),
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
+            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
+            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
+        )
         Z = Decimal("0.00")
+
+        avg_partial = (
+            (m.total_partial_collected / m.total_partial_bills)
+            if m.total_partial_bills else Z
+        )
 
         return Response({
             # ── all-time (freshly rebuilt or from cache) ──────────────────────
-            "total_ipd_bills":  m.total_ipd_bills,
-            "total_opd_bills":  m.total_opd_bills,
-            "total_collected":  str(m.total_collected),
-            "total_cash":       str(m.total_cash),
-            "total_upi":        str(m.total_upi),
-            "total_online":     str(m.total_online),
+            "total_ipd_bills":          m.total_ipd_bills,
+            "total_opd_bills":          m.total_opd_bills,
+            "total_collected":          str(m.total_collected),
+            "total_cash":               str(m.total_cash),
+            "total_upi":                str(m.total_upi),
+            "total_online":             str(m.total_online),
+            "total_partial_bills":      m.total_partial_bills,
+            "total_partial_collected":  str(m.total_partial_collected),
+            "avg_partial_amount":       str(avg_partial.quantize(Decimal("0.01"))),
             # ── today (always live) ───────────────────────────────────────────
-            "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
-            "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
-            "today_collected":  str(today_agg["total"] or Z),
-            "today_cash":       str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)),
-            "today_upi":        str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)),
-            "today_online":     str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)),
+            "today_ipd_bills":    today_paid.filter(bill_type="IPD").count(),
+            "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
+            "today_collected":    str(today_agg["total"] or Z),
+            "today_cash":         str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)
+                                      + (partial_agg["cash_adv"] or Z) + (partial_agg["cash_part"] or Z)),
+            "today_upi":          str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)
+                                      + (partial_agg["upi_adv"] or Z) + (partial_agg["upi_part"] or Z)),
+            "today_online":       str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)
+                                      + (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)),
+            "today_partial_bills":     today_partial.count(),
+            "today_partial_collected": str(partial_agg["total_partial"] or Z),
             # ── meta ──────────────────────────────────────────────────────────
-            "as_of":            today.isoformat(),
+            "as_of":              today.isoformat(),
             "metrics_updated_at": m.updated_at,
-            "from_cache":       from_cache,
-            "cache_ttl_seconds": self.CACHE_TTL_SECONDS,
+            "from_cache":         from_cache,
+            "cache_ttl_seconds":  self.CACHE_TTL_SECONDS,
         })
 
 

@@ -98,8 +98,9 @@ class Bill(models.Model):
 
     # ── Payment ───────────────────────────────────────────────────────────────
     class PaymentStatus(models.TextChoices):
-        UNPAID = "UNPAID", "Unpaid"
-        PAID   = "PAID",   "Paid"
+        UNPAID  = "UNPAID",  "Unpaid"
+        PARTIAL = "PARTIAL", "Partially Paid"
+        PAID    = "PAID",    "Paid"
 
     class PaidVia(models.TextChoices):
         CASH   = "CASH",   "Cash"
@@ -115,6 +116,13 @@ class Bill(models.Model):
     # Payment mode used for the advance (may differ from paid_via when reception
     # collected the advance separately before the doctor settled the balance).
     advance_paid_via = models.CharField(
+        max_length=10, choices=PaidVia.choices, default=PaidVia.CASH, blank=True
+    )
+    # Partial payment — amount and mode (populated only when payment_status=PARTIAL)
+    partial_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    partial_amount_via = models.CharField(
         max_length=10, choices=PaidVia.choices, default=PaidVia.CASH, blank=True
     )
 
@@ -149,6 +157,12 @@ class Metrics(models.Model):
     total_upi    = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
     total_online = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
 
+    # ── Partially-paid bills (PARTIAL status) ─────────────────────────────────
+    total_partial_bills     = models.PositiveIntegerField(default=0)
+    total_partial_collected = models.DecimalField(
+        max_digits=14, decimal_places=2, default=Decimal("0.00")
+    )
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -165,10 +179,13 @@ class Metrics(models.Model):
     @classmethod
     def rebuild(cls):
         """
-        Recompute every cumulative field from PAID bills only. Idempotent.
-        Revenue = advance_paid + net_bill, each split by its own payment mode:
-          advance_paid → advance_paid_via bucket
-          net_bill     → paid_via bucket
+        Recompute every cumulative field from the Bills table. Idempotent.
+
+        PAID bills:    advance_paid → advance_paid_via bucket
+                       net_bill     → paid_via bucket
+        PARTIAL bills: advance_paid → advance_paid_via bucket (still collected)
+                       partial_amount → partial_amount_via bucket
+                       counted in total_partial_bills / total_partial_collected
         """
         from django.db.models import ExpressionWrapper, F, Q, Sum
         from django.db.models import DecimalField as DDF
@@ -178,8 +195,10 @@ class Metrics(models.Model):
             output_field=DDF(max_digits=14, decimal_places=2),
         )
 
-        paid = Bill.objects.filter(payment_status="PAID")
-        agg = paid.aggregate(
+        paid    = Bill.objects.filter(payment_status="PAID")
+        partial = Bill.objects.filter(payment_status="PARTIAL")
+
+        paid_agg = paid.aggregate(
             total=Sum(_rev),
             cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
             upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
@@ -188,14 +207,31 @@ class Metrics(models.Model):
             upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
             online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
+        partial_agg = partial.aggregate(
+            total_partial=Sum("partial_amount"),
+            # advance on partial bills also routes to cash/upi/online
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_part=Sum("partial_amount", filter=Q(partial_amount_via="CASH")),
+            upi_part=Sum("partial_amount",  filter=Q(partial_amount_via="UPI")),
+            online_part=Sum("partial_amount", filter=Q(partial_amount_via="ONLINE")),
+        )
+
         Z = Decimal("0.00")
         obj = cls.instance()
         obj.total_ipd_bills = paid.filter(bill_type="IPD").count()
         obj.total_opd_bills = paid.filter(bill_type="OPD").count()
-        obj.total_collected = agg["total"] or Z
-        obj.total_cash      = (agg["cash_adv"]   or Z) + (agg["cash_net"]   or Z)
-        obj.total_upi       = (agg["upi_adv"]    or Z) + (agg["upi_net"]    or Z)
-        obj.total_online    = (agg["online_adv"] or Z) + (agg["online_net"] or Z)
+        obj.total_collected = paid_agg["total"] or Z
+        obj.total_cash    = (paid_agg["cash_adv"]   or Z) + (paid_agg["cash_net"]   or Z)
+        obj.total_upi     = (paid_agg["upi_adv"]    or Z) + (paid_agg["upi_net"]    or Z)
+        obj.total_online  = (paid_agg["online_adv"] or Z) + (paid_agg["online_net"] or Z)
+        # partial bills — also add their advance + partial_amount into method buckets
+        obj.total_cash   += (partial_agg["cash_adv"]   or Z) + (partial_agg["cash_part"]   or Z)
+        obj.total_upi    += (partial_agg["upi_adv"]    or Z) + (partial_agg["upi_part"]    or Z)
+        obj.total_online += (partial_agg["online_adv"] or Z) + (partial_agg["online_part"] or Z)
+        obj.total_partial_bills     = partial.count()
+        obj.total_partial_collected = partial_agg["total_partial"] or Z
         obj.save()
         return obj
 

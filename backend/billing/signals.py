@@ -1,19 +1,18 @@
 """
 Signals that keep the Metrics singleton in sync with the Bill table.
 
-ONLY PAID bills are counted.  Transitions handled:
+Transitions handled per payment_status:
 
-  Bill created as PAID   → add count + revenue
-  Bill created as UNPAID → no-op
-  UNPAID → PAID          → add count + revenue
-  PAID   → UNPAID        → subtract count + revenue
-  PAID   → PAID          → subtract old, add new (handles every field change)
-  Bill deleted (was PAID)  → full rebuild (avoids negative-count race)
-  Bill deleted (was UNPAID)→ no-op
+  → PAID    : count bill; add advance_paid (via advance_paid_via) +
+              net_bill (via paid_via) to method buckets + total_collected
+  → PARTIAL : count partial bill; add advance_paid (via advance_paid_via) +
+              partial_amount (via partial_amount_via) to method buckets;
+              update total_partial_bills / total_partial_collected
+  → UNPAID  : no-op (or reverse whichever status it came from)
 
-Revenue is split by payment mode:
-  advance_paid → advance_paid_via bucket  (collected by reception)
-  net_bill     → paid_via bucket          (collected by doctor at checkout)
+Any transition (UNPAID↔PAID, UNPAID↔PARTIAL, PAID↔PARTIAL) uses the
+"subtract old, add new" pattern — handled generically in the PAID→PAID branch
+by comparing the full old state vs new state.
 
 All writes use atomic F() expressions — no read-modify-write races.
 """
@@ -45,34 +44,46 @@ def _add_to(updates: dict, field: str, amount) -> None:
         updates[field] = updates.get(field, F(field)) + amount
 
 
-def _apply_revenue(updates: dict, advance: Decimal, net: Decimal,
-                   adv_via: str, net_via: str, sign: int) -> None:
-    """Route advance to adv_via bucket and net to net_via bucket."""
-    _add_to(updates, "total_collected", sign * (advance + net))
-    _add_to(updates, _via_field(adv_via), sign * advance)
-    _add_to(updates, _via_field(net_via), sign * net)
+def _apply_bill(updates: dict, state, sign: int) -> None:
+    """
+    Add (sign=+1) or subtract (sign=-1) all revenue & counts for a bill state.
+    `state` may be a Bill instance or a pre_save snapshot dict.
+    Works for PAID, PARTIAL, and UNPAID (UNPAID is a no-op).
+    """
+    if isinstance(state, dict):
+        status          = state["payment_status"]
+        bill_type       = state["bill_type"]
+        advance         = Decimal(str(state["advance_paid"]))
+        adv_via         = state.get("advance_paid_via") or "CASH"
+        net             = Decimal(str(state["net_bill"]))
+        net_via         = state["paid_via"]
+        partial         = Decimal(str(state.get("partial_amount") or "0"))
+        partial_via     = state.get("partial_amount_via") or "CASH"
+    else:
+        status          = state.payment_status
+        bill_type       = state.bill_type
+        advance         = Decimal(str(state.advance_paid))
+        adv_via         = state.advance_paid_via or "CASH"
+        net             = Decimal(str(state.net_bill))
+        net_via         = state.paid_via
+        partial         = Decimal(str(state.partial_amount))
+        partial_via     = state.partial_amount_via or "CASH"
 
+    if status == "PAID":
+        _add_to(updates, _count_field(bill_type), sign)
+        _add_to(updates, "total_collected", sign * (advance + net))
+        _add_to(updates, _via_field(adv_via), sign * advance)
+        _add_to(updates, _via_field(net_via), sign * net)
 
-def _parts(bill) -> tuple:
-    """Return (advance, net, adv_via, net_via) from a Bill instance."""
-    return (
-        Decimal(str(bill.advance_paid)),
-        Decimal(str(bill.net_bill)),
-        bill.advance_paid_via or "CASH",
-        bill.paid_via,
-    )
-
-
-def _parts_from_state(state: dict) -> tuple:
-    """Return (advance, net, adv_via, net_via) from a pre_save snapshot dict.
-    Uses .get() with a safe default for advance_paid_via so legacy rows
-    (saved before the field was added) don't raise KeyError."""
-    return (
-        Decimal(str(state["advance_paid"])),
-        Decimal(str(state["net_bill"])),
-        state.get("advance_paid_via") or "CASH",
-        state["paid_via"],
-    )
+    elif status == "PARTIAL":
+        _add_to(updates, "total_partial_bills",     sign)
+        _add_to(updates, "total_partial_collected", sign * partial)
+        # advance + partial go to their respective method buckets
+        _add_to(updates, _via_field(adv_via),    sign * advance)
+        _add_to(updates, _via_field(partial_via), sign * partial)
+        # they also count toward total_collected
+        _add_to(updates, "total_collected", sign * (advance + partial))
+    # UNPAID → no-op
 
 
 def _ensure() -> None:
@@ -89,7 +100,7 @@ def _capture_bill_state(sender, instance, **kwargs):
     try:
         instance._pre_state = Bill.objects.values(
             "bill_type", "net_bill", "advance_paid", "advance_paid_via",
-            "payment_status", "paid_via",
+            "payment_status", "paid_via", "partial_amount", "partial_amount_via",
         ).get(pk=instance.pk)
     except Bill.DoesNotExist:
         instance._pre_state = None
@@ -103,12 +114,12 @@ def _bill_post_save(sender, instance, created, **kwargs):
 
     # ── New bill ──────────────────────────────────────────────────────────────
     if created:
-        if instance.payment_status != "PAID":
+        if instance.payment_status == "UNPAID":
             return
-        advance, net, adv_via, net_via = _parts(instance)
-        updates = {_count_field(instance.bill_type): F(_count_field(instance.bill_type)) + 1}
-        _apply_revenue(updates, advance, net, adv_via, net_via, sign=1)
-        Metrics.objects.filter(pk=1).update(**updates)
+        updates = {}
+        _apply_bill(updates, instance, sign=1)
+        if updates:
+            Metrics.objects.filter(pk=1).update(**updates)
         return
 
     # ── Updated bill ──────────────────────────────────────────────────────────
@@ -117,35 +128,13 @@ def _bill_post_save(sender, instance, created, **kwargs):
         Metrics.rebuild()
         return
 
-    was_paid = old["payment_status"] == "PAID"
-    is_paid  = instance.payment_status == "PAID"
+    if old["payment_status"] == "UNPAID" and instance.payment_status == "UNPAID":
+        return  # no metrics impact
 
-    if not was_paid and not is_paid:
-        return  # both unpaid → no metrics change
-
+    # Generic: subtract old contribution, add new contribution
     updates: dict = {}
-
-    if not was_paid and is_paid:
-        # UNPAID → PAID: add new values
-        advance, net, adv_via, net_via = _parts(instance)
-        _add_to(updates, _count_field(instance.bill_type), 1)
-        _apply_revenue(updates, advance, net, adv_via, net_via, sign=1)
-
-    elif was_paid and not is_paid:
-        # PAID → UNPAID: subtract old values
-        advance, net, adv_via, net_via = _parts_from_state(old)
-        _add_to(updates, _count_field(old["bill_type"]), -1)
-        _apply_revenue(updates, advance, net, adv_via, net_via, sign=-1)
-
-    else:
-        # PAID → PAID: subtract old completely, add new completely
-        # (handles any combination of field changes in one atomic op)
-        old_adv, old_net, old_adv_via, old_net_via = _parts_from_state(old)
-        new_adv, new_net, new_adv_via, new_net_via = _parts(instance)
-        _add_to(updates, _count_field(old["bill_type"]), -1)
-        _apply_revenue(updates, old_adv, old_net, old_adv_via, old_net_via, sign=-1)
-        _add_to(updates, _count_field(instance.bill_type), 1)
-        _apply_revenue(updates, new_adv, new_net, new_adv_via, new_net_via, sign=1)
+    _apply_bill(updates, old,      sign=-1)
+    _apply_bill(updates, instance, sign=+1)
 
     if updates:
         Metrics.objects.filter(pk=1).update(**updates)
@@ -155,9 +144,10 @@ def _bill_post_save(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=Bill)
 def _bill_post_delete(sender, instance, **kwargs):
-    if instance.payment_status != "PAID":
+    if instance.payment_status == "UNPAID":
         return
     # Use rebuild() rather than F()-decrement to avoid CHECK constraint
     # violations when the Metrics table is out of sync with the Bills table.
     Metrics.rebuild()
+
 
