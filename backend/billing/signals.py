@@ -1,18 +1,21 @@
 """
 Signals that keep the Metrics singleton in sync with the Bill table.
 
-Transitions handled per payment_status:
+Bill counts (total_ipd_bills / total_opd_bills) track ALL bills regardless of
+payment status — incremented on creation, decremented via rebuild() on deletion.
 
-  → PAID    : count bill; add advance_paid (via advance_paid_via)
-              + each partially_collected entry (via payment_method)
-              + net_bill (via paid_via) to method buckets + total_collected
-  → PARTIAL : count partial bill; add advance_paid (via advance_paid_via)
-              + each partially_collected entry (via payment_method)
-              to method buckets + total_partial_bills / total_partial_collected.
-              Does NOT touch total_collected (bill not fully settled).
-  → UNPAID  : no-op (or reverse whichever status it came from)
+Revenue buckets (total_cash/upi/online) accumulate money actually received:
+  → PAID    : advance_paid (via advance_paid_via) +
+              each partially_collected entry (via payment_method) +
+              net_bill (via paid_via)
+  → PARTIAL : advance_paid (via advance_paid_via) +
+              each partially_collected entry (via payment_method)
+  → UNPAID  : no revenue (no-op)
 
-Any transition uses the "subtract old, add new" pattern.
+total_collected is always total_cash + total_upi + total_online.
+total_unsettled = sum of net_bill for all PARTIAL bills (money still owed).
+
+Any revenue transition uses the "subtract old, add new" pattern.
 All writes use atomic F() expressions — no read-modify-write races.
 """
 
@@ -53,45 +56,41 @@ def _apply_pc_list(updates: dict, pc_list, sign: int) -> None:
 
 def _apply_bill(updates: dict, state, sign: int) -> None:
     """
-    Add (sign=+1) or subtract (sign=-1) all revenue & counts for a bill state.
+    Add (sign=+1) or subtract (sign=-1) revenue for a bill state.
+    Bill counts are NOT handled here — they track ALL bills and are managed
+    separately in post_save (on create) and via rebuild() (on delete).
     `state` may be a Bill instance or a pre_save snapshot dict.
-    Works for PAID, PARTIAL, and UNPAID (UNPAID is a no-op).
     """
     if isinstance(state, dict):
-        status    = state["payment_status"]
-        bill_type = state["bill_type"]
-        advance   = Decimal(str(state["advance_paid"]))
-        adv_via   = state.get("advance_paid_via") or "CASH"
-        net       = Decimal(str(state["net_bill"]))
-        net_via   = state["paid_via"]
-        pc_list   = state.get("partially_collected") or []
+        status  = state["payment_status"]
+        advance = Decimal(str(state["advance_paid"]))
+        adv_via = state.get("advance_paid_via") or "CASH"
+        net     = Decimal(str(state["net_bill"]))
+        net_via = state["paid_via"]
+        pc_list = state.get("partially_collected") or []
     else:
-        status    = state.payment_status
-        bill_type = state.bill_type
-        advance   = Decimal(str(state.advance_paid))
-        adv_via   = state.advance_paid_via or "CASH"
-        net       = Decimal(str(state.net_bill))
-        net_via   = state.paid_via
-        pc_list   = state.partially_collected or []
+        status  = state.payment_status
+        advance = Decimal(str(state.advance_paid))
+        adv_via = state.advance_paid_via or "CASH"
+        net     = Decimal(str(state.net_bill))
+        net_via = state.paid_via
+        pc_list = state.partially_collected or []
 
     total_pc = sum(Decimal(str(e.get("amount", "0"))) for e in pc_list)
 
     if status == "PAID":
-        # Total revenue = advance + all partial collections + remaining net
-        _add_to(updates, _count_field(bill_type), sign)
+        # total_collected = total_cash + total_upi + total_online, maintained via buckets
         _add_to(updates, "total_collected", sign * (advance + total_pc + net))
         _add_to(updates, _via_field(adv_via), sign * advance)
         _add_to(updates, _via_field(net_via), sign * net)
         _apply_pc_list(updates, pc_list, sign)
 
     elif status == "PARTIAL":
-        # total_unsettled tracks the outstanding net_bill (what's still owed).
-        # Does NOT touch total_collected — bill is not fully settled.
         _add_to(updates, "total_partial_bills", sign)
         _add_to(updates, "total_unsettled",     sign * net)
         _add_to(updates, _via_field(adv_via),   sign * advance)
         _apply_pc_list(updates, pc_list, sign)
-    # UNPAID → no-op
+    # UNPAID → no revenue impact
 
 
 def _ensure() -> None:
@@ -122,12 +121,16 @@ def _bill_post_save(sender, instance, created, **kwargs):
 
     # ── New bill ──────────────────────────────────────────────────────────────
     if created:
-        if instance.payment_status == "UNPAID":
-            return
-        updates = {}
-        _apply_bill(updates, instance, sign=1)
-        if updates:
-            Metrics.objects.filter(pk=1).update(**updates)
+        # Always increment the IPD/OPD count regardless of payment status
+        Metrics.objects.filter(pk=1).update(
+            **{_count_field(instance.bill_type): F(_count_field(instance.bill_type)) + 1}
+        )
+        # Only handle revenue for non-UNPAID bills
+        if instance.payment_status != "UNPAID":
+            revenue: dict = {}
+            _apply_bill(revenue, instance, sign=1)
+            if revenue:
+                Metrics.objects.filter(pk=1).update(**revenue)
         return
 
     # ── Updated bill ──────────────────────────────────────────────────────────
@@ -136,10 +139,11 @@ def _bill_post_save(sender, instance, created, **kwargs):
         Metrics.rebuild()
         return
 
+    # Bill counts don't change on update (bill_type is immutable after creation)
     if old["payment_status"] == "UNPAID" and instance.payment_status == "UNPAID":
-        return  # no metrics impact
+        return  # no revenue impact
 
-    # Generic: subtract old contribution, add new contribution
+    # Generic: subtract old revenue contribution, add new revenue contribution
     updates: dict = {}
     _apply_bill(updates, old,      sign=-1)
     _apply_bill(updates, instance, sign=+1)
@@ -152,8 +156,6 @@ def _bill_post_save(sender, instance, created, **kwargs):
 
 @receiver(post_delete, sender=Bill)
 def _bill_post_delete(sender, instance, **kwargs):
-    if instance.payment_status == "UNPAID":
-        return
-    # Use rebuild() rather than F()-decrement to avoid CHECK constraint
-    # violations when the Metrics table is out of sync with the Bills table.
+    # rebuild() recounts ALL bills (handles count decrement) and recalculates
+    # all revenue buckets, avoiding potential CHECK constraint violations.
     Metrics.rebuild()

@@ -86,7 +86,7 @@ export default function RateFormModal({ apiClient, onClose, onSaved, editRate })
             <h2 className="text-base font-bold text-gray-800">
               {isEdit ? 'Edit Service Charge' : 'New Service Charge'}
             </h2>
-            <p className="text-xs text-gray-400">Shree Bal Rugnalaya</p>
+            <p className="text-xs text-gray-400">Shree Hospital</p>
           </div>
           <button
             type="button"

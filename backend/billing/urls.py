@@ -7,6 +7,8 @@ from .views import (
     BillPaymentAPIView,
     MetricsAPIView,
     MetricsRefreshAPIView,
+    PartialCollectExecuteAPIView,
+    PartialCollectRequestDetailAPIView,
     PatientBasicProfileDetailAPIView,
     PatientBasicProfileListCreateAPIView,
     QueueDetailAPIView,
@@ -23,6 +25,9 @@ urlpatterns = [
     path("bills/<int:pk>/", BillDetailAPIView.as_view(), name="bill-detail"),
     path("bills/<int:pk>/payment/", BillPaymentAPIView.as_view(), name="bill-payment"),
     path("bills/<int:pk>/collect-partial/", BillCollectPartialAPIView.as_view(), name="bill-collect-partial"),
+    # ── Partial Collect Requests ──────────────────────────────────────────────
+    path("collect-partial/<int:pk>/", PartialCollectRequestDetailAPIView.as_view(), name="collect-partial-detail"),
+    path("collect-partial/<int:pk>/execute/", PartialCollectExecuteAPIView.as_view(), name="collect-partial-execute"),
     # ── Service Rates ─────────────────────────────────────────────────────────
     path("rates/", ServiceRateListCreateAPIView.as_view(), name="rate-list-create"),
     path("rates/<int:pk>/", ServiceRateDetailAPIView.as_view(), name="rate-detail"),

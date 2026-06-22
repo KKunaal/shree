@@ -36,7 +36,7 @@ export default function Login() {
           🏥
         </div>
         <h1 className="text-3xl font-bold text-blue-800">Shree Hospital</h1>
-        <p className="text-blue-500 text-sm mt-1">Shree Bal Rugnalaya · Ambad</p>
+        <p className="text-blue-500 text-sm mt-1">Shree Hospital · Ambad</p>
       </div>
 
       {/* Card */}
@@ -62,6 +62,7 @@ export default function Login() {
               className="input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="password"
               autoComplete="current-password"
               required
             />

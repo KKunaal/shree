@@ -24,48 +24,45 @@ _auth = {
 
 def _today_stats(today):
     """
-    Compute today's revenue metrics by iterating bill rows in Python.
+    Compute today's metrics by iterating bills in Python.
 
-    SQL aggregate() can't route partially_collected JSON entries to payment-method
-    buckets, so we iterate — same approach as Metrics.rebuild().
-
-    Correct totals:
-      PAID   : advance_paid + total_partially_collected + net_bill
-               → today_collected; each amount routed to its method bucket
-      PARTIAL: advance_paid + total_partially_collected
-               → today_partial_collected; each amount routed to method bucket
+    Counts : ALL bills created today regardless of payment status.
+    Collected: cash + upi + online actually received today (PAID + PARTIAL).
+               today_collected is derived as the sum of the three method buckets.
     """
     Z = Decimal("0.00")
     _via = {"CASH": "today_cash", "UPI": "today_upi", "ONLINE": "today_online"}
 
     s = {
-        "today_ipd_bills":         0,
-        "today_opd_bills":         0,
-        "today_collected":         Z,
-        "today_cash":              Z,
-        "today_upi":               Z,
-        "today_online":            Z,
-        "today_partial_bills":     0,
-        "today_unsettled":         Z,
+        "today_ipd_bills":     0,
+        "today_opd_bills":     0,
+        "today_collected":     Z,
+        "today_cash":          Z,
+        "today_upi":           Z,
+        "today_online":        Z,
+        "today_partial_bills": 0,
+        "today_unsettled":     Z,
     }
 
+    # ── Count ALL bills created today (any payment status) ───────────────────
+    for b in Bill.objects.filter(created_at__date=today).values("bill_type"):
+        s["today_ipd_bills" if b["bill_type"] == "IPD" else "today_opd_bills"] += 1
+
+    # ── Revenue from PAID bills ───────────────────────────────────────────────
     for b in Bill.objects.filter(
         created_at__date=today, payment_status="PAID"
     ).values(
-        "bill_type", "advance_paid", "advance_paid_via",
-        "net_bill", "paid_via",
-        "total_partially_collected", "partially_collected",
+        "advance_paid", "advance_paid_via",
+        "net_bill", "paid_via", "partially_collected",
     ):
-        adv  = Decimal(str(b["advance_paid"] or "0"))
-        net  = Decimal(str(b["net_bill"] or "0"))
-        t_pc = Decimal(str(b.get("total_partially_collected") or "0"))
-        s["today_collected"] += adv + t_pc + net
-        s["today_ipd_bills" if b["bill_type"] == "IPD" else "today_opd_bills"] += 1
+        adv = Decimal(str(b["advance_paid"] or "0"))
+        net = Decimal(str(b["net_bill"] or "0"))
         s[_via.get(b.get("advance_paid_via") or "CASH", "today_upi")] += adv
         s[_via.get(b.get("paid_via") or "UPI", "today_upi")] += net
         for e in (b.get("partially_collected") or []):
             s[_via.get(e.get("payment_method", "CASH"), "today_upi")] += Decimal(str(e.get("amount", "0")))
 
+    # ── Revenue from PARTIAL bills ────────────────────────────────────────────
     for b in Bill.objects.filter(
         created_at__date=today, payment_status="PARTIAL"
     ).values(
@@ -79,6 +76,8 @@ def _today_stats(today):
         for e in (b.get("partially_collected") or []):
             s[_via.get(e.get("payment_method", "CASH"), "today_upi")] += Decimal(str(e.get("amount", "0")))
 
+    # ── Total collected = all money actually received through any method ──────
+    s["today_collected"] = s["today_cash"] + s["today_upi"] + s["today_online"]
     return s
 
 

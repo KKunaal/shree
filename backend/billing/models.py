@@ -226,32 +226,30 @@ class Metrics(models.Model):
         """
         Recompute every cumulative field from the Bills table. Idempotent.
 
-        PAID:    advance_paid + each partially_collected entry + net_bill
-                 → total_collected + method buckets
-        PARTIAL: advance_paid + each partially_collected entry
-                 → method buckets (not total_collected — bill not fully settled)
-                 net_bill → total_unsettled (outstanding balance still owed)
+        Counts : ALL bills (any payment status).
+        Buckets: money actually received (PAID + PARTIAL advance + partial_collected entries).
+        total_collected = total_cash + total_upi + total_online  (all received money).
+        PARTIAL: net_bill → total_unsettled (outstanding balance still owed).
         """
         Z = Decimal("0.00")
         via_map = {"CASH": "total_cash", "UPI": "total_upi", "ONLINE": "total_online"}
 
         totals = {
-            "total_ipd_bills": 0, "total_opd_bills": 0,
+            # Count ALL bills regardless of payment status
+            "total_ipd_bills": Bill.objects.filter(bill_type="IPD").count(),
+            "total_opd_bills": Bill.objects.filter(bill_type="OPD").count(),
             "total_collected": Z,
             "total_cash": Z, "total_upi": Z, "total_online": Z,
             "total_partial_bills": 0, "total_unsettled": Z,
         }
 
         for b in Bill.objects.filter(payment_status="PAID").values(
-            "bill_type", "advance_paid", "advance_paid_via",
+            "advance_paid", "advance_paid_via",
             "net_bill", "paid_via", "partially_collected",
         ):
-            adv  = Decimal(str(b["advance_paid"] or "0"))
-            net  = Decimal(str(b["net_bill"] or "0"))
-            pc   = b.get("partially_collected") or []
-            t_pc = sum(Decimal(str(e.get("amount", "0"))) for e in pc)
-            totals["total_collected"] += adv + t_pc + net
-            totals["total_ipd_bills" if b["bill_type"] == "IPD" else "total_opd_bills"] += 1
+            adv = Decimal(str(b["advance_paid"] or "0"))
+            net = Decimal(str(b["net_bill"] or "0"))
+            pc  = b.get("partially_collected") or []
             totals[via_map.get(b.get("advance_paid_via") or "CASH", "total_upi")] += adv
             totals[via_map.get(b.get("paid_via") or "UPI", "total_upi")] += net
             cls._sum_pc_by_method(pc, via_map, totals)
@@ -265,6 +263,9 @@ class Metrics(models.Model):
             totals["total_unsettled"] += Decimal(str(b.get("net_bill") or "0"))
             totals[via_map.get(b.get("advance_paid_via") or "CASH", "total_upi")] += adv
             cls._sum_pc_by_method(b.get("partially_collected"), via_map, totals)
+
+        # total_collected = all money received through any payment method
+        totals["total_collected"] = totals["total_cash"] + totals["total_upi"] + totals["total_online"]
 
         obj = cls.instance()
         for field, value in totals.items():

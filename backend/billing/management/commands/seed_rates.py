@@ -49,7 +49,7 @@ DEFAULTS = [
 
 
 class Command(BaseCommand):
-    help = "Seed ServiceRate table with Shree Bal Rugnalaya default charge-master."
+    help = "Seed ServiceRate table with Shree Hospital default charge-master."
 
     def handle(self, *args, **options):
         created_count = 0
