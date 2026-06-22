@@ -370,14 +370,16 @@ export default function Bills({ onTabChange }) {
       {/* Spacer when no pagination bar */}
       {totalPages <= 1 && <div className="pb-28" />}
 
-      {/* FAB */}
-      <button
-        onClick={() => setShowCreate(true)}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-blue-700 hover:bg-blue-800 text-white rounded-full shadow-2xl flex items-center justify-center text-3xl font-light active:scale-90 transition-transform z-40"
-        title="Create new bill"
-      >
-        +
-      </button>
+      {/* FAB — doctors only */}
+      {isDoctor && (
+        <button
+          onClick={() => setShowCreate(true)}
+          className="fixed bottom-6 right-6 w-16 h-16 bg-blue-700 hover:bg-blue-800 text-white rounded-full shadow-2xl flex items-center justify-center text-3xl font-light active:scale-90 transition-transform z-40"
+          title="Create new bill"
+        >
+          +
+        </button>
+      )}
 
       {showCreate && (
         <CreateBillModal apiClient={apiClient} isDoctor={isDoctor} onClose={() => setShowCreate(false)} onCreated={handleBillCreated} />
