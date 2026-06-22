@@ -139,10 +139,12 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
                   className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
                   🖨️ Print
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onEdit?.(bill) }}
-                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
-                  ✏️ Edit
-                </button>
+                {isDoctor && (
+                  <button onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onEdit?.(bill) }}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5">
+                    ✏️ Edit
+                  </button>
+                )}
                 {isDoctor && onDelete && (
                   <>
                     <div className="h-px bg-gray-100 mx-3 my-0.5" />

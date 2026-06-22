@@ -42,6 +42,8 @@ export default function Queue({ onTabChange }) {
   const [editPatient, setEditPatient] = useState(null)
   const [showBillModal, setShowBillModal] = useState(false)
   const [billPrefill, setBillPrefill] = useState(null)
+  // When doctor clicks "Mark Done", bill must be created first before status is patched
+  const [pendingDoneItem, setPendingDoneItem] = useState(null)
 
   // 3-dot menu
   const [openMenu, setOpenMenu] = useState(null) // queue item id
@@ -112,13 +114,20 @@ export default function Queue({ onTabChange }) {
     }
   }
 
-  const handleMarkDone = async (queueItem) => {
+  const handleMarkDone = (queueItem) => {
+    // Open bill creation first; queue is only patched to DONE after bill is saved
+    setPendingDoneItem(queueItem)
+    setBillPrefill(queueItem.patient)
+    setShowBillModal(true)
+  }
+
+  // Called internally after bill is successfully created
+  const markQueueItemDone = async (queueItem) => {
     try {
       const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'DONE' })
       setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
-      showToast('✓ Patient marked as Done')
     } catch {
-      showToast('⚠ Failed to update status', 'error')
+      showToast('⚠ Bill saved but failed to mark patient as Done', 'error')
     }
   }
 
@@ -298,11 +307,6 @@ export default function Queue({ onTabChange }) {
                 setConfirmDelete(item)
                 setOpenMenu(null)
               }}
-              onCreateBill={() => {
-                setBillPrefill(item.patient)
-                setShowBillModal(true)
-                setOpenMenu(null)
-              }}
             />
           ))
         )}
@@ -356,15 +360,27 @@ export default function Queue({ onTabChange }) {
           apiClient={apiClient}
           isDoctor={isDoctor}
           prefillData={billPrefill}
-          onClose={() => { setShowBillModal(false); setBillPrefill(null) }}
-          onCreated={() => {
+          onClose={() => {
             setShowBillModal(false)
             setBillPrefill(null)
-            showToast('✓ Bill saved successfully')
+            // Doctor closed without saving — do NOT mark as Done
+            setPendingDoneItem(null)
+          }}
+          onCreated={async () => {
+            setShowBillModal(false)
+            setBillPrefill(null)
+            if (pendingDoneItem) {
+              await markQueueItemDone(pendingDoneItem)
+              setPendingDoneItem(null)
+              showToast('✓ Bill saved & patient marked as Done')
+            } else {
+              showToast('✓ Bill saved successfully')
+            }
           }}
           onUpdated={() => {
             setShowBillModal(false)
             setBillPrefill(null)
+            setPendingDoneItem(null)
           }}
         />
       )}
@@ -373,15 +389,12 @@ export default function Queue({ onTabChange }) {
 }
 
 /* ── QueueCard ── */
-function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onStatusCycle, onMoveToWithDoctor, onMarkDone, onMoveToWaiting, onMoveUp, onMoveDown, onEdit, onDelete, onCreateBill }) {
+function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onStatusCycle, onMoveToWithDoctor, onMarkDone, onMoveToWaiting, onMoveUp, onMoveDown, onEdit, onDelete }) {
   const { patient, queue_number, status } = item
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.WAITING
 
   // Reception loses Edit + Remove once a patient has left the WAITING state
   const receptionLocked = !isDoctor && (status === 'WITH_DOCTOR' || status === 'DONE')
-
-  // Create Bill is only unlocked when the doctor has marked the patient Done
-  const billLocked = status !== 'DONE'
 
   // Reception cannot move up/down while patient is WITH_DOCTOR
   const receptionMoveLocked = !isDoctor && status === 'WITH_DOCTOR'
@@ -475,12 +488,6 @@ function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onS
                   onClick={onEdit}
                   disabled={receptionLocked}
                   hint={receptionLocked ? 'Only doctor can edit now' : null}
-                />
-                <MenuOption
-                  icon="🧾" label="Create Bill"
-                  onClick={onCreateBill}
-                  disabled={billLocked}
-                  hint={billLocked ? 'Available once doctor marks as Done' : null}
                 />
                 <MenuOption
                   icon="🗑️" label="Remove"
