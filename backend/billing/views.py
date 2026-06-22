@@ -206,9 +206,12 @@ class BillPaymentAPIView(APIView):
     """
     PATCH /api/bills/<id>/payment/
 
-    Update only payment_status and/or paid_via for a single bill.
-    Returns the full updated bill so the frontend can refresh its local state
-    in a single round-trip.
+    Update payment_status and/or paid_via for a single bill.
+    Also recomputes net_bill to guarantee it reflects the correct formula:
+        net_bill = total_bill − advance_paid − discount − total_partially_collected
+    Fires pre_save/post_save signals exactly ONCE then calls Metrics.rebuild()
+    for a guaranteed-correct metrics state.
+    Returns the full updated bill.
 
     Body (all fields optional):
         { "payment_status": "PAID" | "UNPAID",
@@ -219,18 +222,51 @@ class BillPaymentAPIView(APIView):
 
     def patch(self, request, pk):
         from django.shortcuts import get_object_or_404
+
         bill = get_object_or_404(Bill, pk=pk)
-        payment_ser = BillPaymentSerializer(bill, data=request.data, partial=True)
-        payment_ser.is_valid(raise_exception=True)
-        payment_ser.save()
-        # Auto-manage callout based on new status
-        if bill.payment_status == "PAID" and bill.callout != "Bill settled":
+
+        # ── Validate + apply incoming fields ─────────────────────────────────
+        payment_status = request.data.get("payment_status")
+        paid_via       = request.data.get("paid_via")
+
+        if payment_status is not None:
+            if payment_status not in Bill.PaymentStatus.values:
+                return Response({"detail": "Invalid payment_status."}, status=400)
+            bill.payment_status = payment_status
+
+        if paid_via is not None:
+            if paid_via not in Bill.PaidVia.values:
+                return Response({"detail": "Invalid paid_via."}, status=400)
+            bill.paid_via = paid_via
+
+        # ── Auto-manage callout ───────────────────────────────────────────────
+        if bill.payment_status == Bill.PaymentStatus.PAID:
             bill.callout = "Bill settled"
-            bill.save(update_fields=["callout"])
-        elif bill.payment_status != "PAID" and bill.callout == "Bill settled":
-            # Doctor moved back from PAID — clear the settled callout
+        elif bill.callout == "Bill settled":
             bill.callout = ""
-            bill.save(update_fields=["callout"])
+
+        # ── Recompute net_bill (guarantees formula correctness) ───────────────
+        # net_bill = positive charges − advance − discount − partial collections
+        pos_total = sum(
+            Decimal(str(i.get("amount", "0")))
+            for i in (bill.line_items or [])
+            if Decimal(str(i.get("amount", "0"))) > Decimal("0")
+        )
+        advance   = Decimal(str(bill.advance_paid or "0"))
+        discount  = Decimal(str(bill.discount or "0"))
+        total_pc  = Decimal(str(bill.total_partially_collected or "0"))
+        bill.total_bill = pos_total.quantize(Decimal("0.01"))
+        bill.net_bill   = (pos_total - advance - discount - total_pc).quantize(Decimal("0.01"))
+
+        # ── Single save: fires pre_save + post_save signals once ──────────────
+        bill.save()
+
+        # Explicit full rebuild guarantees metrics correctness regardless of
+        # incremental signal state (cold worker, stale snapshot, etc.)
+        Metrics.rebuild()
+
+        # Refresh to get the authoritative DB state before responding
+        bill.refresh_from_db()
         return Response(BillSerializer(bill).data)
 
 
