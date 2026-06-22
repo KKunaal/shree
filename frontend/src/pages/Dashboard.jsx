@@ -127,10 +127,9 @@ export default function Dashboard({ onTabChange }) {
 
             {/* Row 3 — partial payments today (shown only if any exist) */}
             {metrics.today_partial_bills > 0 && (
-              <div className="grid grid-cols-3 gap-3 mt-3">
-                <MetricCard icon="◑"  label="Partial Bills"   value={metrics.today_partial_bills}                                                          color="orange" />
-                <MetricCard icon="💸" label="Partial Paid"    value={fAmt(metrics.today_partial_collected)}                                                color="orange" />
-                <MetricCard icon="〜" label="Avg Partial"     value={fAmt(metrics.today_partial_bills > 0 ? parseFloat(metrics.today_partial_collected) / metrics.today_partial_bills : 0)} color="orange" />
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.today_partial_bills}          color="orange" />
+                <MetricCard icon="💸" label="Partial Paid"   value={fAmt(metrics.today_partial_collected)} color="orange" />
               </div>
             )}
           </section>
@@ -172,10 +171,9 @@ export default function Dashboard({ onTabChange }) {
 
             {/* Row 3 — partial payments all-time (shown only if any exist) */}
             {metrics.total_partial_bills > 0 && (
-              <div className="grid grid-cols-3 gap-3 mt-3">
-                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.total_partial_bills}            color="orange" />
-                <MetricCard icon="💸" label="Partial Total"  value={fAmt(metrics.total_partial_collected)}  color="orange" />
-                <MetricCard icon="〜" label="Avg Partial"    value={fAmt(metrics.avg_partial_amount)}       color="orange" />
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <MetricCard icon="◑"  label="Partial Bills"  value={metrics.total_partial_bills}           color="orange" />
+                <MetricCard icon="💸" label="Partial Total"  value={fAmt(metrics.total_partial_collected)} color="orange" />
               </div>
             )}
           </section>

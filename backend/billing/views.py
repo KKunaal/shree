@@ -173,14 +173,8 @@ class MetricsAPIView(APIView):
         )
         Z = Decimal("0.00")
 
-        # all-time average partial payment
-        avg_partial = (
-            (m.total_partial_collected / m.total_partial_bills)
-            if m.total_partial_bills else Z
-        )
-
         return Response({
-            # ── all-time (from Metrics table, PAID only) ──────────────────────
+            # ── all-time (from Metrics table) ─────────────────────────────────
             "total_ipd_bills":          m.total_ipd_bills,
             "total_opd_bills":          m.total_opd_bills,
             "total_collected":          str(m.total_collected),
@@ -189,7 +183,6 @@ class MetricsAPIView(APIView):
             "total_online":             str(m.total_online),
             "total_partial_bills":      m.total_partial_bills,
             "total_partial_collected":  str(m.total_partial_collected),
-            "avg_partial_amount":       str(avg_partial.quantize(Decimal("0.01"))),
             # ── today (live) ─────────────────────────────────────────────────
             "today_ipd_bills":    today_paid.filter(bill_type="IPD").count(),
             "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
@@ -274,11 +267,6 @@ class MetricsRefreshAPIView(APIView):
         )
         Z = Decimal("0.00")
 
-        avg_partial = (
-            (m.total_partial_collected / m.total_partial_bills)
-            if m.total_partial_bills else Z
-        )
-
         return Response({
             # ── all-time (freshly rebuilt or from cache) ──────────────────────
             "total_ipd_bills":          m.total_ipd_bills,
@@ -289,7 +277,6 @@ class MetricsRefreshAPIView(APIView):
             "total_online":             str(m.total_online),
             "total_partial_bills":      m.total_partial_bills,
             "total_partial_collected":  str(m.total_partial_collected),
-            "avg_partial_amount":       str(avg_partial.quantize(Decimal("0.01"))),
             # ── today (always live) ───────────────────────────────────────────
             "today_ipd_bills":    today_paid.filter(bill_type="IPD").count(),
             "today_opd_bills":    today_paid.filter(bill_type="OPD").count(),
