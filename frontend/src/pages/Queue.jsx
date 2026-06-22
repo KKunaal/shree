@@ -385,19 +385,34 @@ function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCyc
               ⋮
             </button>
             {openMenu === item.id && (
-              <div className="absolute right-0 top-8 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-48 py-1 overflow-hidden"
+              <div className="absolute right-0 top-8 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-56 py-1 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}>
                 {/* ── Status actions ── */}
-                <MenuOption icon="👨‍⚕️" label="With Doctor"  onClick={onMoveToWithDoctor} />
+                <MenuOption
+                  icon="👨‍⚕️" label="With Doctor"
+                  onClick={onMoveToWithDoctor}
+                  hint={!isDoctor ? 'Only doctor can edit or remove after this' : null}
+                />
                 {isDoctor && (
-                  <MenuOption icon="✅" label="Mark Done"    onClick={onMarkDone} />
+                  <MenuOption icon="✅" label="Mark Done" onClick={onMarkDone} />
                 )}
-                <MenuOption icon="⬆️" label="Move Up"       onClick={onMoveUp} disabled={isFirst} />
+                <MenuOption icon="⬆️" label="Move Up" onClick={onMoveUp} disabled={isFirst} />
                 <div className="my-1 border-t border-gray-100" />
                 {/* ── Management actions ── */}
-                <MenuOption icon="✏️" label="Edit Patient"  onClick={onEdit}        disabled={receptionLocked} />
-                <MenuOption icon="🧾" label="Create Bill"   onClick={onCreateBill} />
-                <MenuOption icon="🗑️" label="Remove"        onClick={onDelete}      disabled={receptionLocked} danger />
+                <MenuOption
+                  icon="✏️" label="Edit Patient"
+                  onClick={onEdit}
+                  disabled={receptionLocked}
+                  hint={receptionLocked ? 'Only doctor can edit now' : null}
+                />
+                <MenuOption icon="🧾" label="Create Bill" onClick={onCreateBill} />
+                <MenuOption
+                  icon="🗑️" label="Remove"
+                  onClick={onDelete}
+                  disabled={receptionLocked}
+                  hint={receptionLocked ? 'Only doctor can remove now' : null}
+                  danger
+                />
               </div>
             )}
           </div>
@@ -443,19 +458,30 @@ function Chip({ label }) {
   )
 }
 
-function MenuOption({ icon, label, onClick, danger, disabled }) {
+function MenuOption({ icon, label, onClick, danger, disabled, hint }) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition
+      className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left transition
         ${disabled
-          ? 'text-gray-300 cursor-not-allowed'
+          ? 'cursor-not-allowed'
           : danger
-          ? 'text-red-600 hover:bg-red-50'
-          : 'text-gray-700 hover:bg-gray-50'}`}
+          ? 'hover:bg-red-50'
+          : 'hover:bg-gray-50'}`}
     >
-      <span>{icon}</span>{label}
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <span className="flex flex-col min-w-0">
+        <span className={`text-sm font-medium leading-tight
+          ${disabled ? 'text-gray-300' : danger ? 'text-red-600' : 'text-gray-700'}`}>
+          {label}
+        </span>
+        {hint && (
+          <span className="text-[10px] leading-tight mt-0.5 text-amber-500 font-normal">
+            {hint}
+          </span>
+        )}
+      </span>
     </button>
   )
 }
