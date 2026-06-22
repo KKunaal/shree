@@ -115,16 +115,41 @@ export default function Bills({ onTabChange }) {
         `/bills/${collectPartialBill.id}/collect-partial/`,
         { amount: String(amount) }
       )
-      // Update original bill in list + prepend new UNPAID bill at top
-      setResults((prev) => [
-        data.new_bill,
-        ...prev.map((b) => (b.id === collectPartialBill.id ? data.original : b)),
-      ])
-      setTotalCount((c) => c + 1)
+      setResults((prev) => prev.map((b) => (b.id === collectPartialBill.id ? data : b)))
       setCollectPartialBill(null)
-      showToast(`✓ Partial split done — new bill #${data.new_bill.ipd_no || data.new_bill.opd_no} created`)
+      showToast(`✓ Collect request set for ${data.patient_name}`)
     } catch (err) {
-      showToast(err?.response?.data?.detail || '⚠ Failed to collect partial.', 'error')
+      showToast(err?.response?.data?.detail || '⚠ Failed to record partial collection.', 'error')
+    }
+  }
+
+  const handleExecuteCollect = async (pcrId, paidVia) => {
+    try {
+      const { data } = await apiClient.post(`/collect-partial/${pcrId}/execute/`, { paid_via: paidVia })
+      setResults((prev) => prev.map((b) => (b.id === data.id ? data : b)))
+      showToast(`✓ Collected · ${data.patient_name}`)
+    } catch (err) {
+      showToast(err?.response?.data?.detail || '⚠ Failed to collect.', 'error')
+    }
+  }
+
+  const handleDeleteCollect = async (pcrId) => {
+    try {
+      const { data } = await apiClient.delete(`/collect-partial/${pcrId}/`)
+      setResults((prev) => prev.map((b) => (b.id === data.id ? data : b)))
+      showToast('✓ Collect request removed')
+    } catch {
+      showToast('⚠ Failed to remove collect request.', 'error')
+    }
+  }
+
+  const handleEditCollect = async (pcrId, amount) => {
+    try {
+      const { data } = await apiClient.patch(`/collect-partial/${pcrId}/`, { amount: String(amount) })
+      setResults((prev) => prev.map((b) => (b.id === data.id ? data : b)))
+      showToast('✓ Collect amount updated')
+    } catch (err) {
+      showToast(err?.response?.data?.detail || '⚠ Failed to update.', 'error')
     }
   }
 
@@ -329,6 +354,9 @@ export default function Bills({ onTabChange }) {
               onDelete={isDoctor ? (b) => setConfirmDelete(b) : undefined}
               onPaymentChange={handlePaymentChange}
               onCollectPartial={isDoctor ? (b) => setCollectPartialBill(b) : undefined}
+              onExecuteCollect={handleExecuteCollect}
+              onDeleteCollect={handleDeleteCollect}
+              onEditCollect={handleEditCollect}
             />
           ))
         )}
@@ -494,7 +522,7 @@ function CollectPartialModal({ bill, onClose, onConfirm }) {
         {/* Amount input */}
         <div className="mt-4">
           <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Amount to split off (must be less than {fmt(net)})
+            Amount to collect from patient (must be less than {fmt(net)})
           </label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">₹</span>
@@ -514,11 +542,11 @@ function CollectPartialModal({ bill, onClose, onConfirm }) {
           {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
         </div>
 
-        {/* What will happen */}
+        {/* Preview */}
         {amount && !validate(amount) && (
-          <div className="mt-3 bg-gray-50 rounded-xl p-3 space-y-1 text-xs text-gray-600 border border-gray-100">
-            <p>✂️ Original bill reduced to <span className="font-semibold text-indigo-700">{fmt(net - parseFloat(amount))}</span> → marked <span className="font-semibold text-yellow-700">◑ Partial</span></p>
-            <p>📄 New <span className="font-semibold text-orange-700">⏳ Unpaid</span> bill created for <span className="font-semibold text-indigo-700">{fmt(amount)}</span></p>
+          <div className="mt-3 bg-indigo-50 rounded-xl p-3 text-xs text-indigo-700 border border-indigo-100">
+            📋 A collect request for <span className="font-semibold">{fmt(amount)}</span> will be created.
+            Reception will see a <span className="font-semibold">Collect</span> button on this bill.
           </div>
         )}
 
@@ -535,7 +563,7 @@ function CollectPartialModal({ bill, onClose, onConfirm }) {
             disabled={saving || !amount || !!validate(amount)}
             className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50"
           >
-            {saving ? '⏳ Splitting…' : `Split ${amount ? fmt(amount) : ''}`}
+            {saving ? '⏳ Saving…' : `Set Collect ${amount ? fmt(amount) : ''}`}
           </button>
         </div>
       </div>

@@ -16,12 +16,15 @@ const STATUS_BADGE = {
   UNPAID:  { cls: 'bg-orange-100  text-orange-700',  label: '⏳ Unpaid'  },
 }
 
-export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange, onCollectPartial }) {
+export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, onPaymentChange, onCollectPartial, onExecuteCollect, onDeleteCollect, onEditCollect }) {
+  const pcr = bill.partial_collect_requests?.[0] ?? null  // active request (if any)
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
   const [confirmPaid, setConfirmPaid] = useState(false)
   const [pendingPaidVia, setPendingPaidVia] = useState(bill.paid_via || 'CASH')
+  const [showExecuteCollect, setShowExecuteCollect] = useState(false)
+  const [editPcrOpen, setEditPcrOpen] = useState(false)
   const menuRef = useRef(null)
 
   const isOPD     = bill.bill_type === 'OPD'
@@ -228,7 +231,7 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
             ✓ Paid · {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
           </span>
         ) : (
-          /* ── Reception: UNPAID or PARTIAL → show "Mark as Paid" button ── */
+          /* ── Reception: UNPAID or PARTIAL → Mark as Paid button ── */
           <button
             disabled={paymentSaving}
             onClick={() => { setPendingPaidVia(bill.paid_via || 'CASH'); setConfirmPaid(true) }}
@@ -238,6 +241,33 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
               ? <span className="animate-spin leading-none">⏳</span>
               : '✓ Mark as Paid'}
           </button>
+        )}
+
+        {/* ── PCR "Collect ₹XX" button (shown when a pending request exists) ── */}
+        {pcr && !isPaid && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => setShowExecuteCollect(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 active:scale-95 transition"
+            >
+              💰 Collect {fmt(pcr.collect_amount)}
+            </button>
+            {/* Doctor-only: edit / delete the PCR */}
+            {isDoctor && (
+              <>
+                <button
+                  onClick={() => setEditPcrOpen(true)}
+                  title="Edit amount"
+                  className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition text-sm"
+                >✏️</button>
+                <button
+                  onClick={() => onDeleteCollect?.(pcr.id)}
+                  title="Cancel request"
+                  className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition text-sm"
+                >✕</button>
+              </>
+            )}
+          </div>
         )}
       </div>
 
@@ -339,6 +369,31 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
           </div>
         </div>
       </div>
+    )}
+
+    {/* ── Execute collect modal ─────────────────────────────────────────── */}
+    {showExecuteCollect && pcr && (
+      <ExecuteCollectModal
+        pcr={pcr}
+        onClose={() => setShowExecuteCollect(false)}
+        onConfirm={(paidVia) => {
+          onExecuteCollect?.(pcr.id, paidVia)
+          setShowExecuteCollect(false)
+        }}
+      />
+    )}
+
+    {/* ── Edit PCR modal (doctor only) ─────────────────────────────────── */}
+    {editPcrOpen && pcr && isDoctor && (
+      <EditPcrModal
+        pcr={pcr}
+        bill={bill}
+        onClose={() => setEditPcrOpen(false)}
+        onConfirm={(amount) => {
+          onEditCollect?.(pcr.id, amount)
+          setEditPcrOpen(false)
+        }}
+      />
     )}
   </>
   )
@@ -470,6 +525,117 @@ function PayViaSelector({ value, disabled, onChange }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── ExecuteCollectModal ─────────────────────────────────────────────────── */
+function ExecuteCollectModal({ pcr, onClose, onConfirm }) {
+  const [via, setVia] = useState('CASH')
+  const [saving, setSaving] = useState(false)
+  const fmt = n => `₹${parseFloat(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="text-3xl mb-2 text-center">💰</div>
+        <h3 className="text-base font-bold text-gray-800 text-center">Collect Payment</h3>
+        {pcr.collect_label && (
+          <p className="text-sm text-gray-500 mt-1 text-center">{pcr.collect_label}</p>
+        )}
+        <div className="mt-4 flex justify-center">
+          <span className="text-sm font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-full px-4 py-1.5">
+            {fmt(pcr.collect_amount)}
+          </span>
+        </div>
+        <div className="mt-4">
+          <p className="text-xs font-medium text-gray-600 mb-2">Payment received via</p>
+          <PayViaSelector value={via} disabled={saving} onChange={setVia} />
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={saving}
+            onClick={async () => { setSaving(true); await onConfirm(via) }}
+            className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50"
+          >
+            {saving ? '⏳' : `Collect ${fmt(pcr.collect_amount)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── EditPcrModal ────────────────────────────────────────────────────────── */
+function EditPcrModal({ pcr, bill, onClose, onConfirm }) {
+  const [amount, setAmount] = useState(String(parseFloat(pcr.collect_amount)))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const net = parseFloat(bill.net_bill)
+  const fmt = n => `₹${parseFloat(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+
+  const validate = (v) => {
+    const n = parseFloat(v)
+    if (!v || isNaN(n) || n <= 0) return 'Enter an amount greater than ₹0'
+    if (n >= net) return `Must be less than ${fmt(net)}`
+    return ''
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h3 className="text-base font-bold text-gray-800 text-center">Edit Collect Amount</h3>
+        <p className="text-xs text-gray-400 text-center mt-1">Max: {fmt(net)}</p>
+        <div className="mt-4 relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">₹</span>
+          <input
+            type="number"
+            autoFocus
+            value={amount}
+            onChange={e => { setAmount(e.target.value); setError('') }}
+            className="w-full border border-gray-300 rounded-xl pl-7 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
+        </div>
+        {error && <p className="text-xs text-red-500 mt-1.5">{error}</p>}
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 border border-gray-300 text-gray-600 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition"
+          >
+            Cancel
+          </button>
+          <button
+            disabled={saving || !!validate(amount)}
+            onClick={async () => {
+              const e = validate(amount)
+              if (e) { setError(e); return }
+              setSaving(true)
+              await onConfirm(parseFloat(amount))
+            }}
+            className="flex-1 bg-indigo-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50"
+          >
+            {saving ? '⏳' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
