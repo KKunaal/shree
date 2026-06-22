@@ -136,7 +136,7 @@ class Metrics(models.Model):
     total_ipd_bills = models.PositiveIntegerField(default=0)
     total_opd_bills = models.PositiveIntegerField(default=0)
 
-    # ── Revenue totals (PAID only, net_bill) ──────────────────────────────────
+    # ── Revenue totals (PAID only, advance_paid + net_bill) ──────────────────
     total_collected = models.DecimalField(
         max_digits=14, decimal_places=2, default=Decimal("0.00")
     )
@@ -162,17 +162,22 @@ class Metrics(models.Model):
         """
         Recompute every cumulative field from PAID bills only. Idempotent.
         Touches the DB with 1 aggregate query + 1 UPDATE.
+        Revenue = advance_paid + net_bill (total actually collected).
         """
-        from django.db.models import Q, Sum
+        from django.db.models import ExpressionWrapper, F, Q, Sum
+        from django.db.models import DecimalField as DDF
+
+        _rev = ExpressionWrapper(
+            F("advance_paid") + F("net_bill"),
+            output_field=DDF(max_digits=14, decimal_places=2),
+        )
 
         paid = Bill.objects.filter(payment_status="PAID")
         agg = paid.aggregate(
-            ipd=Sum("net_bill", filter=Q(bill_type="IPD")),
-            opd=Sum("net_bill", filter=Q(bill_type="OPD")),
-            total=Sum("net_bill"),
-            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
-            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
-            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+            total=Sum(_rev),
+            cash=Sum(_rev, filter=Q(paid_via="CASH")),
+            upi=Sum(_rev, filter=Q(paid_via="UPI")),
+            online=Sum(_rev, filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
         obj = cls.instance()

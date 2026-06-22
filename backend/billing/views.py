@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import DecimalField, ExpressionWrapper, F, Q, Sum
 from django.utils import timezone
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated, BasePermission
@@ -13,6 +13,13 @@ from .models import Bill, Metrics, PatientBasicProfile, Queue, ServiceRate
 from .serializers import (
     BillPaymentSerializer, BillSerializer,
     PatientBasicProfileSerializer, QueueSerializer, ServiceRateSerializer,
+)
+
+# Revenue per bill = advance already collected + remaining balance paid.
+# This equals total_bill - discount (net of discount only, not advance).
+_REVENUE = ExpressionWrapper(
+    F("advance_paid") + F("net_bill"),
+    output_field=DecimalField(max_digits=14, decimal_places=2),
 )
 
 _auth = {
@@ -148,10 +155,10 @@ class MetricsAPIView(APIView):
 
         today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
         today_agg = today_paid.aggregate(
-            total=Sum("net_bill"),
-            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
-            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
-            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+            total=Sum(_REVENUE),
+            cash=Sum(_REVENUE, filter=Q(paid_via="CASH")),
+            upi=Sum(_REVENUE, filter=Q(paid_via="UPI")),
+            online=Sum(_REVENUE, filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
@@ -224,10 +231,10 @@ class MetricsRefreshAPIView(APIView):
         today = timezone.localdate()
         today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
         today_agg = today_paid.aggregate(
-            total=Sum("net_bill"),
-            cash=Sum("net_bill", filter=Q(paid_via="CASH")),
-            upi=Sum("net_bill", filter=Q(paid_via="UPI")),
-            online=Sum("net_bill", filter=Q(paid_via="ONLINE")),
+            total=Sum(_REVENUE),
+            cash=Sum(_REVENUE, filter=Q(paid_via="CASH")),
+            upi=Sum(_REVENUE, filter=Q(paid_via="UPI")),
+            online=Sum(_REVENUE, filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
