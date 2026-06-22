@@ -9,9 +9,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .authentication import FixedBasicAuthentication
-from .models import Bill, Metrics, PatientBasicProfile, Queue, ServiceRate
+from .models import Bill, Metrics, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate
 from .serializers import (
     BillPaymentSerializer, BillSerializer,
+    PartialCollectRequestSerializer,
     PatientBasicProfileSerializer, QueueSerializer, ServiceRateSerializer,
 )
 
@@ -237,17 +238,13 @@ class BillCollectPartialAPIView(APIView):
     """
     POST /api/bills/<id>/collect-partial/   (doctor only)
 
-    Records a partial collection on an UNPAID bill:
-      • Adds a "Partial Collection for {TYPE} #{NO}" line item (informational)
-      • Sets payment_status → PARTIAL
-      • Sets callout → "Partially collected"
+    Creates a PartialCollectRequest for the bill. The doctor sets the amount;
+    reception later executes it choosing payment method.
 
-    Body: { "amount": "250.00" }
-    Returns: updated bill
+    Body:   { "amount": "250.00" }
+    Returns: updated bill (with new PCR nested in partial_collect_requests)
 
-    Constraints:
-      - bill must be UNPAID
-      - 0 < amount < bill.net_bill
+    Constraints:  bill must not be PAID · 0 < amount < bill.net_bill
     """
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated, IsDoctor]
@@ -257,9 +254,9 @@ class BillCollectPartialAPIView(APIView):
 
         bill = get_object_or_404(Bill, pk=pk)
 
-        if bill.payment_status != Bill.PaymentStatus.UNPAID:
+        if bill.payment_status == Bill.PaymentStatus.PAID:
             return Response(
-                {"detail": "Only UNPAID bills can have a partial collection recorded."},
+                {"detail": "Cannot add a collect request to an already-paid bill."},
                 status=400,
             )
 
@@ -278,24 +275,125 @@ class BillCollectPartialAPIView(APIView):
                 status=400,
             )
 
-        orig_no     = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
-        split_label = f"Partial Collection for {bill.bill_type} #{orig_no}"
+        orig_no = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
+        label   = f"Partial Collection for {bill.bill_type} #{orig_no}"
 
-        # Append a negative deduction line item so line_items still sum to total_bill
+        PartialCollectRequest.objects.create(
+            bill=bill,
+            collect_amount=amount,
+            collect_label=label,
+        )
+        bill.refresh_from_db()
+        return Response(BillSerializer(bill).data, status=201)
+
+
+class PartialCollectRequestDetailAPIView(APIView):
+    """
+    PATCH  /api/collect-partial/<id>/   (doctor only) — update amount
+    DELETE /api/collect-partial/<id>/   (doctor only) — cancel request
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated, IsDoctor]
+
+    def patch(self, request, pk):
+        from django.shortcuts import get_object_or_404
+
+        pcr = get_object_or_404(PartialCollectRequest, pk=pk)
+        try:
+            amount = Decimal(str(request.data.get("amount") or "0")).quantize(Decimal("0.01"))
+        except Exception:
+            return Response({"detail": "Invalid amount."}, status=400)
+
+        if amount <= Decimal("0"):
+            return Response({"detail": "Amount must be greater than zero."}, status=400)
+
+        net = Decimal(str(pcr.bill.net_bill))
+        if amount >= net:
+            return Response(
+                {"detail": f"Amount must be less than the net payable of {net}."},
+                status=400,
+            )
+
+        orig_no = pcr.bill.opd_no if pcr.bill.bill_type == "OPD" else pcr.bill.ipd_no
+        pcr.collect_amount = amount
+        pcr.collect_label  = f"Partial Collection for {pcr.bill.bill_type} #{orig_no}"
+        pcr.save()
+        pcr.bill.refresh_from_db()
+        return Response(BillSerializer(pcr.bill).data)
+
+    def delete(self, request, pk):
+        from django.shortcuts import get_object_or_404
+
+        pcr  = get_object_or_404(PartialCollectRequest, pk=pk)
+        bill = pcr.bill
+        pcr.delete()
+        bill.refresh_from_db()
+        return Response(BillSerializer(bill).data)
+
+
+class PartialCollectExecuteAPIView(APIView):
+    """
+    POST /api/collect-partial/<id>/execute/   (doctor + reception)
+
+    Executes a pending PartialCollectRequest:
+      • Appends a negative deduction line item
+      • Reduces bill.total_bill and bill.net_bill by collect_amount
+      • Adds collect_amount to bill.advance_paid (so PARTIAL signal records correct bucket)
+      • Sets bill.payment_status → PARTIAL
+      • Sets bill.callout → "Partially collected"
+      • Deletes the PartialCollectRequest
+      • Signals fire → Metrics updated
+
+    Body: { "paid_via": "CASH" | "UPI" | "ONLINE" }
+    Returns: updated bill
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.shortcuts import get_object_or_404
+
+        pcr  = get_object_or_404(PartialCollectRequest, pk=pk)
+        bill = pcr.bill
+
+        if bill.payment_status == Bill.PaymentStatus.PAID:
+            return Response({"detail": "Bill is already paid."}, status=400)
+
+        paid_via = request.data.get("paid_via", "CASH")
+        if paid_via not in ("CASH", "UPI", "ONLINE"):
+            return Response({"detail": "Invalid paid_via."}, status=400)
+
+        amount = Decimal(str(pcr.collect_amount))
+        net    = Decimal(str(bill.net_bill))
+
+        if amount >= net:
+            return Response(
+                {"detail": f"Collect amount {amount} exceeds current net payable {net}."},
+                status=400,
+            )
+
+        # ── Deduct from bill & mark PARTIAL ──────────────────────────────────
         bill.line_items = list(bill.line_items) + [{
-            "name":         split_label,
+            "name":         pcr.collect_label,
             "rate_per_day": str(-amount),
             "days":         1,
             "amount":       str(-amount),
         }]
-        # Reduce total_bill and net_bill so net payable on the card updates correctly
-        bill.total_bill = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
-        bill.net_bill   = (net - amount).quantize(Decimal("0.01"))
+        bill.total_bill     = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
+        bill.net_bill       = (net - amount).quantize(Decimal("0.01"))
+        # Piggyback on advance_paid so the PARTIAL signal records the right payment bucket
+        bill.advance_paid   = (Decimal(str(bill.advance_paid)) + amount).quantize(Decimal("0.01"))
+        bill.advance_paid_via = paid_via
         bill.payment_status = Bill.PaymentStatus.PARTIAL
-        bill.callout = "Partially collected"
-        bill.save()  # pre_save/post_save signals update Metrics
+        bill.callout        = "Partially collected"
+        bill.save()  # fires pre_save/post_save → signals do incremental Metrics update
 
-        return Response(BillSerializer(bill).data, status=200)
+        # Explicit rebuild guarantees metrics are correct even if the incremental
+        # signal path had a stale snapshot (e.g. concurrent save, cold worker, etc.)
+        Metrics.rebuild()
+
+        pcr.delete()
+        return Response(BillSerializer(bill).data)
 
 
 class MetricsRefreshAPIView(APIView):
