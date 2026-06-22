@@ -122,6 +122,16 @@ export default function Queue({ onTabChange }) {
     }
   }
 
+  const handleMoveToWaiting = async (queueItem) => {
+    try {
+      const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'WAITING' })
+      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      showToast('✓ Moved back to Waiting')
+    } catch {
+      showToast('⚠ Failed to update status', 'error')
+    }
+  }
+
   const handleMoveUp = async (queueItem) => {
     try {
       const { data } = await apiClient.post(`/queue/${queueItem.id}/move-up/`)
@@ -140,6 +150,24 @@ export default function Queue({ onTabChange }) {
     }
   }
 
+  const handleMoveDown = async (queueItem) => {
+    try {
+      const { data } = await apiClient.post(`/queue/${queueItem.id}/move-down/`)
+      setItems((prev) =>
+        prev
+          .map((i) => {
+            if (i.id === data.moved.id)     return data.moved
+            if (i.id === data.displaced.id) return data.displaced
+            return i
+          })
+          .sort((a, b) => a.queue_number - b.queue_number)
+      )
+      showToast('✓ Patient moved down in queue')
+    } catch {
+      showToast('⚠ Failed to move patient down', 'error')
+    }
+  }
+
   const handleDeleteConfirmed = async () => {
     const item = confirmDelete
     setConfirmDelete(null)
@@ -152,9 +180,13 @@ export default function Queue({ onTabChange }) {
     }
   }
 
+  // Reception sees all patients (WAITING, WITH_DOCTOR, DONE) — same as doctor
+  // WITH_DOCTOR cards will have all actions disabled for reception via receptionLocked
+  const visibleItems = items
+
   const filtered = statusFilter === 'ALL'
-    ? items
-    : items.filter((i) => i.status === statusFilter)
+    ? visibleItems
+    : visibleItems.filter((i) => i.status === statusFilter)
 
   const counts = {
     ALL:         items.length,
@@ -247,13 +279,16 @@ export default function Queue({ onTabChange }) {
               key={item.id}
               item={item}
               isFirst={items[0]?.id === item.id}
+              isLast={items[items.length - 1]?.id === item.id}
               isDoctor={isDoctor}
               openMenu={openMenu}
               setOpenMenu={setOpenMenu}
               onStatusCycle={() => handleStatusCycle(item)}
               onMoveToWithDoctor={() => { handleMoveToWithDoctor(item); setOpenMenu(null) }}
               onMarkDone={() => { handleMarkDone(item); setOpenMenu(null) }}
+              onMoveToWaiting={() => { handleMoveToWaiting(item); setOpenMenu(null) }}
               onMoveUp={() => { handleMoveUp(item); setOpenMenu(null) }}
+              onMoveDown={() => { handleMoveDown(item); setOpenMenu(null) }}
               onEdit={() => {
                 setEditPatient(item.patient)
                 setShowPatientModal(true)
@@ -338,12 +373,18 @@ export default function Queue({ onTabChange }) {
 }
 
 /* ── QueueCard ── */
-function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCycle, onMoveToWithDoctor, onMarkDone, onMoveUp, onEdit, onDelete, onCreateBill }) {
+function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onStatusCycle, onMoveToWithDoctor, onMarkDone, onMoveToWaiting, onMoveUp, onMoveDown, onEdit, onDelete, onCreateBill }) {
   const { patient, queue_number, status } = item
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.WAITING
 
   // Reception loses Edit + Remove once a patient has left the WAITING state
   const receptionLocked = !isDoctor && (status === 'WITH_DOCTOR' || status === 'DONE')
+
+  // Create Bill is only unlocked when the doctor has marked the patient Done
+  const billLocked = status !== 'DONE'
+
+  // Reception cannot move up/down while patient is WITH_DOCTOR
+  const receptionMoveLocked = !isDoctor && status === 'WITH_DOCTOR'
 
   const activeConditions = Object.keys(CONDITIONS_LABELS).filter((k) => patient[k])
 
@@ -387,17 +428,47 @@ function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCyc
             {openMenu === item.id && (
               <div className="absolute right-0 top-8 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-56 py-1 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}>
+
                 {/* ── Status actions ── */}
-                <MenuOption
-                  icon="👨‍⚕️" label="With Doctor"
-                  onClick={onMoveToWithDoctor}
-                  hint={!isDoctor ? 'Only doctor can edit or remove after this' : null}
-                />
-                {isDoctor && (
+                {/* "With Doctor": reception can't use this from DONE; greyed when already WITH_DOCTOR */}
+                {(isDoctor || status !== 'DONE') && (
+                  <MenuOption
+                    icon="👨‍⚕️" label="With Doctor"
+                    onClick={onMoveToWithDoctor}
+                    disabled={status === 'WITH_DOCTOR'}
+                    hint={status === 'WITH_DOCTOR'
+                      ? 'Already with doctor'
+                      : (!isDoctor ? 'Only doctor can edit or remove after this' : null)}
+                  />
+                )}
+                {/* Doctor-only actions */}
+                {isDoctor && status !== 'DONE' && (
                   <MenuOption icon="✅" label="Mark Done" onClick={onMarkDone} />
                 )}
-                <MenuOption icon="⬆️" label="Move Up" onClick={onMoveUp} disabled={isFirst} />
+                {isDoctor && status !== 'WAITING' && (
+                  <MenuOption icon="↩️" label="Move to Waiting" onClick={onMoveToWaiting} />
+                )}
+
+                {/* ── Position actions — hidden for DONE patients ── */}
+                {status !== 'DONE' && (
+                  <>
+                    <MenuOption
+                      icon="⬆️" label="Move Up"
+                      onClick={onMoveUp}
+                      disabled={isFirst || receptionMoveLocked}
+                      hint={receptionMoveLocked ? 'Not allowed while patient is with doctor' : null}
+                    />
+                    <MenuOption
+                      icon="⬇️" label="Move Down"
+                      onClick={onMoveDown}
+                      disabled={isLast || receptionMoveLocked}
+                      hint={receptionMoveLocked ? 'Not allowed while patient is with doctor' : null}
+                    />
+                  </>
+                )}
+
                 <div className="my-1 border-t border-gray-100" />
+
                 {/* ── Management actions ── */}
                 <MenuOption
                   icon="✏️" label="Edit Patient"
@@ -405,7 +476,12 @@ function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCyc
                   disabled={receptionLocked}
                   hint={receptionLocked ? 'Only doctor can edit now' : null}
                 />
-                <MenuOption icon="🧾" label="Create Bill" onClick={onCreateBill} />
+                <MenuOption
+                  icon="🧾" label="Create Bill"
+                  onClick={onCreateBill}
+                  disabled={billLocked}
+                  hint={billLocked ? 'Available once doctor marks as Done' : null}
+                />
                 <MenuOption
                   icon="🗑️" label="Remove"
                   onClick={onDelete}
