@@ -336,13 +336,14 @@ class PartialCollectExecuteAPIView(APIView):
     POST /api/collect-partial/<id>/execute/   (doctor + reception)
 
     Executes a pending PartialCollectRequest:
-      • Appends a negative deduction line item
-      • Reduces bill.total_bill and bill.net_bill by collect_amount
-      • Adds collect_amount to bill.advance_paid (so PARTIAL signal records correct bucket)
+      • Appends a negative audit line item to bill.line_items
+      • Appends an entry to bill.partially_collected  {amount, payment_method, payment_text, collected_at}
+      • Increments bill.total_partially_collected
+      • Recomputes bill.total_bill (positive items only) and bill.net_bill
       • Sets bill.payment_status → PARTIAL
       • Sets bill.callout → "Partially collected"
       • Deletes the PartialCollectRequest
-      • Signals fire → Metrics updated
+      • Calls Metrics.rebuild() to keep metrics in sync
 
     Body: { "paid_via": "CASH" | "UPI" | "ONLINE" }
     Returns: updated bill
@@ -372,24 +373,48 @@ class PartialCollectExecuteAPIView(APIView):
                 status=400,
             )
 
-        # ── Deduct from bill & mark PARTIAL ──────────────────────────────────
+        label = pcr.collect_label or "Partial collection"
+
+        # ── 1. Audit line item (negative, for display) ────────────────────────
         bill.line_items = list(bill.line_items) + [{
-            "name":         pcr.collect_label,
+            "name":         label,
             "rate_per_day": str(-amount),
             "days":         1,
             "amount":       str(-amount),
         }]
-        bill.total_bill     = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
-        bill.net_bill       = (net - amount).quantize(Decimal("0.01"))
-        # Piggyback on advance_paid so the PARTIAL signal records the right payment bucket
-        bill.advance_paid   = (Decimal(str(bill.advance_paid)) + amount).quantize(Decimal("0.01"))
-        bill.advance_paid_via = paid_via
+
+        # ── 2. Record in partially_collected list ─────────────────────────────
+        entry = {
+            "amount":         str(amount),
+            "payment_method": paid_via,
+            "payment_text":   label,
+            "collected_at":   timezone.now().isoformat(),
+        }
+        bill.partially_collected = list(bill.partially_collected or []) + [entry]
+
+        # ── 3. Update total_partially_collected ───────────────────────────────
+        new_total_pc = (
+            Decimal(str(bill.total_partially_collected or "0")) + amount
+        ).quantize(Decimal("0.01"))
+        bill.total_partially_collected = new_total_pc
+
+        # ── 4. Recompute total_bill (positive items only) and net_bill ────────
+        pos_total = sum(
+            Decimal(str(i.get("amount", "0")))
+            for i in bill.line_items
+            if Decimal(str(i.get("amount", "0"))) > Decimal("0")
+        )
+        bill.total_bill = pos_total.quantize(Decimal("0.01"))
+        discount = Decimal(str(bill.discount or "0"))
+        advance  = Decimal(str(bill.advance_paid or "0"))
+        bill.net_bill = (pos_total - advance - discount - new_total_pc).quantize(Decimal("0.01"))
+
+        # ── 5. Status + callout ───────────────────────────────────────────────
         bill.payment_status = Bill.PaymentStatus.PARTIAL
         bill.callout        = "Partially collected"
-        bill.save()  # fires pre_save/post_save → signals do incremental Metrics update
+        bill.save()  # fires pre_save/post_save signals
 
-        # Explicit rebuild guarantees metrics are correct even if the incremental
-        # signal path had a stale snapshot (e.g. concurrent save, cold worker, etc.)
+        # Explicit full rebuild guarantees correctness regardless of signal state
         Metrics.rebuild()
 
         pcr.delete()

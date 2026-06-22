@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Max
 from rest_framework import serializers
 
-from .models import Bill, PatientBasicProfile, Queue, ServiceRate
+from .models import Bill, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate
 from .services import GoogleSheetsService
 
 
@@ -25,8 +25,16 @@ class BillLineItemSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
 
 
+class PartialCollectRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PartialCollectRequest
+        fields = ["id", "collect_amount", "collect_label", "created_at"]
+        read_only_fields = ("created_at",)
+
+
 class BillSerializer(serializers.ModelSerializer):
     line_items = BillLineItemSerializer(many=True)
+    partial_collect_requests = PartialCollectRequestSerializer(many=True, read_only=True)
 
     class Meta:
         model = Bill
@@ -40,12 +48,16 @@ class BillSerializer(serializers.ModelSerializer):
             "patient_name", "address", "mobile_no", "gender", "weight", "height", "age", "pulse_rate",
             "line_items",
             "total_bill", "advance_paid", "advance_paid_via", "discount", "discount_note", "net_bill",
+            "partially_collected", "total_partially_collected",
             "payment_status", "paid_via", "partial_amount", "partial_amount_via",
-            "remote_row_ref", "created_at",
+            "callout", "remote_row_ref", "created_at",
+            "partial_collect_requests",
         ]
         read_only_fields = (
-            "ipd_no", "opd_no",           # auto-assigned
-            "total_bill", "net_bill",      # computed
+            "ipd_no", "opd_no",                                # auto-assigned
+            "total_bill", "net_bill",                          # computed
+            "partially_collected", "total_partially_collected", # managed by execute-collect API
+            "callout",                                          # auto-managed by API
             "remote_row_ref", "created_at",
         )
 
@@ -94,13 +106,17 @@ class BillSerializer(serializers.ModelSerializer):
                 "days": days,
                 "amount": str(amount),
             })
-            total_bill += amount
+            # Only positive amounts count toward total_bill;
+            # negative items are audit entries for partial collections.
+            if amount > Decimal("0.00"):
+                total_bill += amount
         return normalized, total_bill
 
     @staticmethod
-    def _compute_net(total_bill, advance, discount):
+    def _compute_net(total_bill, advance, discount, total_partially_collected=Decimal("0.00")):
         disc = Decimal(discount) if discount is not None else Decimal("0.00")
-        return (Decimal(total_bill) - Decimal(advance) - disc).quantize(Decimal("0.01"))
+        pc   = Decimal(str(total_partially_collected)) if total_partially_collected else Decimal("0.00")
+        return (Decimal(total_bill) - Decimal(advance) - disc - pc).quantize(Decimal("0.01"))
 
     @staticmethod
     def _next_bill_no(bill_type: str) -> str:
@@ -162,21 +178,30 @@ class BillSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         # Prevent bill_type from being changed after creation
         validated_data.pop("bill_type", None)
+        # partially_collected and total_partially_collected are managed by the
+        # execute-collect API — never writable via the standard edit endpoint.
+        validated_data.pop("partially_collected", None)
+        validated_data.pop("total_partially_collected", None)
+
+        # Immutable partial collection total from DB (used in net_bill computation)
+        pc_total = instance.total_partially_collected
 
         line_items = validated_data.pop("line_items", None)
 
         if line_items is not None:
             normalized_items, total_bill = self._compute_line_items(line_items)
-            advance = Decimal(validated_data.get("advance_paid", instance.advance_paid))
+            advance  = Decimal(validated_data.get("advance_paid", instance.advance_paid))
             discount = validated_data.get("discount", instance.discount)
-            net_bill = self._compute_net(total_bill, advance, discount)
+            net_bill = self._compute_net(total_bill, advance, discount, pc_total)
             validated_data["line_items"] = normalized_items
             validated_data["total_bill"] = total_bill
-            validated_data["net_bill"] = net_bill
+            validated_data["net_bill"]   = net_bill
         elif "advance_paid" in validated_data or "discount" in validated_data:
-            advance = Decimal(validated_data.get("advance_paid", instance.advance_paid))
+            advance  = Decimal(validated_data.get("advance_paid", instance.advance_paid))
             discount = validated_data.get("discount", instance.discount)
-            validated_data["net_bill"] = self._compute_net(instance.total_bill, advance, discount)
+            validated_data["net_bill"] = self._compute_net(
+                instance.total_bill, advance, discount, pc_total
+            )
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)

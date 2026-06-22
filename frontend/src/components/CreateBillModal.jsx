@@ -175,10 +175,14 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
     setLineItems((prev) => prev.filter((_, i) => i !== idx))
 
   const totalBill = lineItems.reduce(
-    (sum, i) => sum + (parseFloat(i.rate_per_day) || 0) * (parseInt(i.days) || 0), 0
+    (sum, i) => {
+      const amt = (parseFloat(i.rate_per_day) || 0) * (parseInt(i.days) || 0)
+      return sum + (amt > 0 ? amt : 0)  // only positive charges count
+    }, 0
   )
   const discountAmt = parseFloat(form.discount) || 0
-  const netBill = totalBill - (parseFloat(form.advance_paid) || 0) - discountAmt
+  const totalPc = isEdit ? (parseFloat(editBill?.total_partially_collected) || 0) : 0
+  const netBill = totalBill - (parseFloat(form.advance_paid) || 0) - discountAmt - totalPc
 
   const canStep2 = form.patient_name.trim()
   const canStep3 = canStep2 && (billType === 'OPD' ? form.visit_date : form.admitted_on)
@@ -541,6 +545,13 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                     <input type="text" value={form.discount_note} onChange={set('discount_note')} placeholder="Discount reason (optional)"
                       className="w-full text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-purple-300"
                     />
+                  </div>
+                )}
+                {/* Total Partial Collections — shown in edit mode when > 0 */}
+                {isEdit && totalPc > 0 && (
+                  <div className="flex justify-between text-sm text-indigo-700 bg-indigo-50 rounded-lg px-2 py-1.5 border border-indigo-100">
+                    <span className="font-medium">💰 Total Partial Collections</span>
+                    <span className="font-semibold">₹{totalPc.toLocaleString('en-IN')}</span>
                   </div>
                 )}
                 <div className={`flex justify-between text-base font-bold border-t pt-2

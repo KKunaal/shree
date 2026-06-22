@@ -96,6 +96,17 @@ class Bill(models.Model):
     discount_note = models.TextField(blank=True)
     net_bill = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 
+    # ── Partial collections ───────────────────────────────────────────────────
+    # Each entry: {amount, payment_method, payment_text, collected_at}
+    partially_collected = models.JSONField(
+        default=list,
+        help_text="Audit list of partial payments collected via reception.",
+    )
+    # Sum of all amounts in partially_collected (denormalised for fast reads)
+    total_partially_collected = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+
     # ── Payment ───────────────────────────────────────────────────────────────
     class PaymentStatus(models.TextChoices):
         UNPAID  = "UNPAID",  "Unpaid"
@@ -127,6 +138,8 @@ class Bill(models.Model):
     )
 
     remote_row_ref = models.CharField(max_length=120, blank=True)
+    # Auto-managed callout: "Partially collected" or "Bill settled"
+    callout = models.CharField(max_length=100, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -136,6 +149,30 @@ class Bill(models.Model):
         if self.bill_type == "OPD":
             return f"{self.patient_name} (OPD #{self.opd_no})"
         return f"{self.patient_name} (IPD #{self.ipd_no})"
+
+
+class PartialCollectRequest(models.Model):
+    """
+    Doctor-created request to collect a specific amount from a bill.
+    Reception executes it (choosing payment method) which deducts the amount
+    from the bill's net_bill and marks the bill as PARTIAL.
+    Deleted after execution.
+    """
+    bill = models.ForeignKey(
+        Bill,
+        on_delete=models.CASCADE,
+        related_name="partial_collect_requests",
+    )
+    collect_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    collect_label  = models.CharField(max_length=200, blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True)
+    updated_at     = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.bill} — collect ₹{self.collect_amount}"
 
 
 class Metrics(models.Model):
@@ -177,59 +214,60 @@ class Metrics(models.Model):
         return obj
 
     @classmethod
+    def _sum_pc_by_method(cls, pc_list, via_map, totals):
+        """Distribute partial-collection entries into the method buckets."""
+        for e in (pc_list or []):
+            field = via_map.get(e.get("payment_method", "CASH"), "total_upi")
+            totals[field] += Decimal(str(e.get("amount", "0")))
+
+    @classmethod
     def rebuild(cls):
         """
         Recompute every cumulative field from the Bills table. Idempotent.
 
-        PAID bills:    advance_paid → advance_paid_via bucket
-                       net_bill     → paid_via bucket
-                       both → total_collected
-        PARTIAL bills: advance_paid → advance_paid_via bucket (received at reception)
-                       counted in total_partial_bills / total_partial_collected
-                       does NOT go to total_collected (not fully settled)
+        PAID:    advance_paid + each partially_collected entry + net_bill
+                 → total_collected + method buckets
+        PARTIAL: advance_paid + each partially_collected entry
+                 → total_partial_collected + method buckets (not total_collected)
         """
-        from django.db.models import ExpressionWrapper, F, Q, Sum
-        from django.db.models import DecimalField as DDF
-
-        _rev = ExpressionWrapper(
-            F("advance_paid") + F("net_bill"),
-            output_field=DDF(max_digits=14, decimal_places=2),
-        )
-
-        paid    = Bill.objects.filter(payment_status="PAID")
-        partial = Bill.objects.filter(payment_status="PARTIAL")
-
-        paid_agg = paid.aggregate(
-            total=Sum(_rev),
-            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
-            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
-            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
-            cash_net=Sum("net_bill", filter=Q(paid_via="CASH")),
-            upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
-            online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
-        )
-        # PARTIAL: advance_paid is the only amount received
-        partial_agg = partial.aggregate(
-            total_partial=Sum("advance_paid"),
-            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
-            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
-            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
-        )
-
         Z = Decimal("0.00")
+        via_map = {"CASH": "total_cash", "UPI": "total_upi", "ONLINE": "total_online"}
+
+        totals = {
+            "total_ipd_bills": 0, "total_opd_bills": 0,
+            "total_collected": Z,
+            "total_cash": Z, "total_upi": Z, "total_online": Z,
+            "total_partial_bills": 0, "total_partial_collected": Z,
+        }
+
+        for b in Bill.objects.filter(payment_status="PAID").values(
+            "bill_type", "advance_paid", "advance_paid_via",
+            "net_bill", "paid_via", "partially_collected",
+        ):
+            adv  = Decimal(str(b["advance_paid"] or "0"))
+            net  = Decimal(str(b["net_bill"] or "0"))
+            pc   = b.get("partially_collected") or []
+            t_pc = sum(Decimal(str(e.get("amount", "0"))) for e in pc)
+            totals["total_collected"] += adv + t_pc + net
+            totals["total_ipd_bills" if b["bill_type"] == "IPD" else "total_opd_bills"] += 1
+            totals[via_map.get(b.get("advance_paid_via") or "CASH", "total_upi")] += adv
+            totals[via_map.get(b.get("paid_via") or "UPI", "total_upi")] += net
+            cls._sum_pc_by_method(pc, via_map, totals)
+
+        for b in Bill.objects.filter(payment_status="PARTIAL").values(
+            "advance_paid", "advance_paid_via",
+            "total_partially_collected", "partially_collected",
+        ):
+            adv  = Decimal(str(b["advance_paid"] or "0"))
+            t_pc = Decimal(str(b.get("total_partially_collected") or "0"))
+            totals["total_partial_bills"] += 1
+            totals["total_partial_collected"] += adv + t_pc
+            totals[via_map.get(b.get("advance_paid_via") or "CASH", "total_upi")] += adv
+            cls._sum_pc_by_method(b.get("partially_collected"), via_map, totals)
+
         obj = cls.instance()
-        obj.total_ipd_bills = paid.filter(bill_type="IPD").count()
-        obj.total_opd_bills = paid.filter(bill_type="OPD").count()
-        obj.total_collected = paid_agg["total"] or Z
-        obj.total_cash    = (paid_agg["cash_adv"]   or Z) + (paid_agg["cash_net"]   or Z)
-        obj.total_upi     = (paid_agg["upi_adv"]    or Z) + (paid_agg["upi_net"]    or Z)
-        obj.total_online  = (paid_agg["online_adv"] or Z) + (paid_agg["online_net"] or Z)
-        # partial bills — advance also routes to method buckets
-        obj.total_cash   += (partial_agg["cash_adv"]   or Z)
-        obj.total_upi    += (partial_agg["upi_adv"]    or Z)
-        obj.total_online += (partial_agg["online_adv"] or Z)
-        obj.total_partial_bills     = partial.count()
-        obj.total_partial_collected = partial_agg["total_partial"] or Z
+        for field, value in totals.items():
+            setattr(obj, field, value)
         obj.save()
         return obj
 
