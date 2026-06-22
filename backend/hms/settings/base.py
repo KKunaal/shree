@@ -59,9 +59,10 @@ ASGI_APPLICATION = "hms.asgi.application"
 AUTH_PASSWORD_VALIDATORS = []
 
 # Fixed Basic Auth users — same in every environment
+# Each entry: { "password": ..., "role": "doctor" | "reception" }
 FIXED_BASIC_AUTH_USERS = {
-    "reception": "reception@123",
-    "doctor":    "doctor@123",
+    "reception": {"password": "reception@123", "role": "reception"},
+    "doctor":    {"password": "doctor@123",    "role": "doctor"},
 }
 
 # ── Internationalisation ──────────────────────────────────────────────────────

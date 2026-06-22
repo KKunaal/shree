@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,6 +18,18 @@ _auth = {
 }
 
 
+class IsDoctor(BasePermission):
+    """Allow access only to users with role == 'doctor'."""
+    message = "Only doctors can perform this action."
+
+    def has_permission(self, request, view):
+        return bool(
+            request.user
+            and request.user.is_authenticated
+            and getattr(request.user, "role", None) == "doctor"
+        )
+
+
 class BillPagination(PageNumberPagination):
     """Return 10 bills per page; consumer can override via ?page_size=N (max 100)."""
     page_size = 10
@@ -27,14 +39,12 @@ class BillPagination(PageNumberPagination):
 
 class ServiceRateListCreateAPIView(generics.ListCreateAPIView):
     """
-    GET  /api/rates/  → list all service rates
-                         ?category=OPD|IPD|ROOM|PROCEDURE|NURSING|OTHER
-                         ?is_active=true|false
-    POST /api/rates/  → create a new service rate
+    GET  /api/rates/  → list all service rates          (doctor only)
+    POST /api/rates/  → create a new service rate       (doctor only)
     """
     serializer_class = ServiceRateSerializer
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDoctor]
 
     def get_queryset(self):
         qs = ServiceRate.objects.all()
@@ -49,15 +59,15 @@ class ServiceRateListCreateAPIView(generics.ListCreateAPIView):
 
 class ServiceRateDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET    /api/rates/<id>/  → retrieve
-    PUT    /api/rates/<id>/  → full update
-    PATCH  /api/rates/<id>/  → partial update
-    DELETE /api/rates/<id>/  → delete
+    GET    /api/rates/<id>/  → retrieve        (doctor only)
+    PUT    /api/rates/<id>/  → full update     (doctor only)
+    PATCH  /api/rates/<id>/  → partial update  (doctor only)
+    DELETE /api/rates/<id>/  → delete          (doctor only)
     """
     queryset = ServiceRate.objects.all()
     serializer_class = ServiceRateSerializer
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDoctor]
 
 
 class BillListCreateAPIView(generics.ListCreateAPIView):
@@ -105,28 +115,29 @@ class BillListCreateAPIView(generics.ListCreateAPIView):
 
 class BillDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET    /api/bills/<id>/  → retrieve a single bill
-    PUT    /api/bills/<id>/  → full update (recomputes totals)
-    PATCH  /api/bills/<id>/  → partial update
-    DELETE /api/bills/<id>/  → delete bill (local DB only)
+    GET    /api/bills/<id>/  → retrieve             (doctor + reception)
+    PUT    /api/bills/<id>/  → full update           (doctor + reception)
+    PATCH  /api/bills/<id>/  → partial update        (doctor + reception)
+    DELETE /api/bills/<id>/  → delete bill           (doctor only)
     """
     queryset = Bill.objects.all()
     serializer_class = BillSerializer
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated]
 
+    def destroy(self, request, *args, **kwargs):
+        if not getattr(request.user, "is_doctor", False):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Only doctors can delete bills.")
+        return super().destroy(request, *args, **kwargs)
+
 
 class MetricsAPIView(APIView):
     """
-    GET /api/metrics/
-
-    Fast read from the Metrics singleton (signals keep it in sync).
-    Today's figures are always computed live — filtered to PAID bills only.
-
-    For a guaranteed-fresh rebuild use GET /api/metrics/refresh/ instead.
+    GET /api/metrics/   (doctor only)
     """
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDoctor]
 
     def get(self, request):
         today = timezone.localdate()
@@ -189,18 +200,11 @@ class BillPaymentAPIView(APIView):
 
 class MetricsRefreshAPIView(APIView):
     """
-    GET /api/metrics/refresh/
-
-    Re-queries PAID bills and rebuilds the Metrics singleton, then returns
-    the same full payload as /api/metrics/ plus `from_cache`.
-
-    Cache gate: if the Metrics row was updated less than 60 seconds ago the
-    rebuild is skipped and the cached values are returned immediately.
-    `from_cache: true` tells the caller no rebuild happened.
+    GET /api/metrics/refresh/   (doctor only)
     """
     CACHE_TTL_SECONDS = 60
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsDoctor]
 
     def get(self, request):
         from datetime import timedelta

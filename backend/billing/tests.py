@@ -219,25 +219,38 @@ class TestBillApi(APITestCase):
 
     def test_delete_removes_bill(self):
         bill = self._make_bill()
-        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
         response = self.client.delete(reverse("bill-detail", kwargs={"pk": bill.pk}))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(Bill.objects.count(), 0)
 
-    def test_delete_nonexistent_returns_404(self):
+    def test_delete_bill_reception_returns_403(self):
+        bill = self._make_bill()
         self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("reception", "reception@123"))
+        response = self.client.delete(reverse("bill-detail", kwargs={"pk": bill.pk}))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Bill.objects.count(), 1)  # not deleted
+
+    def test_delete_nonexistent_returns_404(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self._basic_auth_header("doctor", "doctor@123"))
         response = self.client.delete(reverse("bill-detail", kwargs={"pk": 9999}))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
 class TestServiceRateApi(APITestCase):
     @staticmethod
-    def _auth():
+    def _doctor_auth():
+        raw = b"doctor:doctor@123"
+        return f"Basic {base64.b64encode(raw).decode()}"
+
+    @staticmethod
+    def _reception_auth():
         raw = b"reception:reception@123"
         return f"Basic {base64.b64encode(raw).decode()}"
 
     def setUp(self):
-        self.client.credentials(HTTP_AUTHORIZATION=self._auth())
+        # Tests run as doctor by default; override per-test where needed
+        self.client.credentials(HTTP_AUTHORIZATION=self._doctor_auth())
 
     def _make_rate(self, **kwargs):
         defaults = {
@@ -263,6 +276,12 @@ class TestServiceRateApi(APITestCase):
         self.assertEqual(ServiceRate.objects.count(), 1)
         self.assertEqual(response.data["default_rate"], "2500.00")
 
+    def test_create_rate_reception_returns_403(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self._reception_auth())
+        payload = {"name": "Room Charges", "category": "ROOM", "default_rate": "2500.00", "unit": "per day"}
+        response = self.client.post(reverse("rate-list-create"), payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_duplicate_name_returns_400(self):
         self._make_rate(name="Room Charges")
         payload = {"name": "Room Charges", "category": "ROOM", "default_rate": "3000.00", "unit": "per day"}
@@ -277,6 +296,11 @@ class TestServiceRateApi(APITestCase):
         response = self.client.get(reverse("rate-list-create"))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 2)
+
+    def test_list_rates_reception_returns_403(self):
+        self.client.credentials(HTTP_AUTHORIZATION=self._reception_auth())
+        response = self.client.get(reverse("rate-list-create"))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_filter_by_category(self):
         self._make_rate(name="Service A", category="OPD")
@@ -302,6 +326,12 @@ class TestServiceRateApi(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["name"], "Test Service")
 
+    def test_retrieve_rate_reception_returns_403(self):
+        rate = self._make_rate()
+        self.client.credentials(HTTP_AUTHORIZATION=self._reception_auth())
+        response = self.client.get(reverse("rate-detail", kwargs={"pk": rate.pk}))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
     # ── update ────────────────────────────────────────────────────────────────
 
     def test_patch_updates_rate(self):
@@ -314,6 +344,16 @@ class TestServiceRateApi(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rate.refresh_from_db()
         self.assertEqual(str(rate.default_rate), "750.00")
+
+    def test_patch_rate_reception_returns_403(self):
+        rate = self._make_rate()
+        self.client.credentials(HTTP_AUTHORIZATION=self._reception_auth())
+        response = self.client.patch(
+            reverse("rate-detail", kwargs={"pk": rate.pk}),
+            {"default_rate": "750.00"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_patch_deactivate_rate(self):
         rate = self._make_rate(is_active=True)
@@ -333,6 +373,13 @@ class TestServiceRateApi(APITestCase):
         response = self.client.delete(reverse("rate-detail", kwargs={"pk": rate.pk}))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(ServiceRate.objects.count(), 0)
+
+    def test_delete_rate_reception_returns_403(self):
+        rate = self._make_rate()
+        self.client.credentials(HTTP_AUTHORIZATION=self._reception_auth())
+        response = self.client.delete(reverse("rate-detail", kwargs={"pk": rate.pk}))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ServiceRate.objects.count(), 1)  # not deleted
 
     def test_delete_nonexistent_rate_returns_404(self):
         response = self.client.delete(reverse("rate-detail", kwargs={"pk": 9999}))
