@@ -70,7 +70,9 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         pulse_rate:   pre.pulse_rate != null ? String(pre.pulse_rate) : '',
         weight:       pre.weight     != null ? String(pre.weight)     : '',
         height:       pre.height     != null ? String(pre.height)     : '',
-        advance_paid: q.reception_amount_collected ? String(q.reception_amount_collected) : '0',
+        advance_paid: parseFloat(q.reception_amount_collected) > 0
+            ? String(q.reception_amount_collected)
+            : '0',
       }
       return defaultType === 'IPD'
         ? { ...emptyIPD, ...common, admitted_on: today }
@@ -116,6 +118,29 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  // Safety net: if component somehow mounted before prefillData._queue was ready,
+  // seed lineItems from reception data once (only when lineItems is empty and
+  // prefillData has reception items, and we're not in edit mode).
+  useEffect(() => {
+    if (isEdit) return
+    const rItems = prefillData?._queue?.reception_line_items
+    if (rItems?.length && lineItems.length === 0) {
+      setLineItems(
+        rItems.map((i) => ({
+          name: i.name,
+          rate_per_day: String(i.rate_per_day || i.rate || '0'),
+          days: String(i.days || 1),
+          _fromReception: true,
+        }))
+      )
+      const amt = parseFloat(prefillData._queue.reception_amount_collected)
+      if (amt > 0) {
+        setForm((f) => ({ ...f, advance_paid: String(prefillData._queue.reception_amount_collected) }))
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally runs only once on mount
 
   // Auto-compute stay days for IPD
   useEffect(() => {
@@ -330,7 +355,8 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                       onClick={() => {
                         const today = todayISO()
                         setBillType(type)
-                        setLineItems([])
+                        // Keep reception-tagged items across type change; clear only manually added ones
+                        setLineItems((prev) => prev.filter((i) => i._fromReception))
                         setForm(f => ({
                           ...f,
                           admitted_on:   type === 'IPD' ? (f.admitted_on || today) : '',
