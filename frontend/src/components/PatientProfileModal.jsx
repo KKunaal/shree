@@ -94,23 +94,26 @@ export default function PatientProfileModal({ apiClient, onClose, onCreated, onU
 
   const charges = queueForm.reception_bill_type === 'OPD' ? OPD_CHARGES : IPD_CHARGES
 
+  const calcTotal = (items) =>
+    items.reduce((sum, i) => sum + (parseFloat(i.rate_per_day) || 0) * (parseInt(i.days) || 0), 0)
+
   const addReceptionCharge = (ct) =>
-    setQueueForm((q) => ({
-      ...q,
-      reception_line_items: [...q.reception_line_items, { name: ct.name, rate_per_day: ct.rate, days: '1' }],
-    }))
+    setQueueForm((q) => {
+      const newItems = [...q.reception_line_items, { name: ct.name, rate_per_day: ct.rate, days: '1' }]
+      return { ...q, reception_line_items: newItems, reception_amount_collected: String(calcTotal(newItems)) }
+    })
 
   const updateReceptionItem = (idx, field, val) =>
-    setQueueForm((q) => ({
-      ...q,
-      reception_line_items: q.reception_line_items.map((item, i) => (i === idx ? { ...item, [field]: val } : item)),
-    }))
+    setQueueForm((q) => {
+      const newItems = q.reception_line_items.map((item, i) => (i === idx ? { ...item, [field]: val } : item))
+      return { ...q, reception_line_items: newItems, reception_amount_collected: String(calcTotal(newItems)) }
+    })
 
   const removeReceptionItem = (idx) =>
-    setQueueForm((q) => ({
-      ...q,
-      reception_line_items: q.reception_line_items.filter((_, i) => i !== idx),
-    }))
+    setQueueForm((q) => {
+      const newItems = q.reception_line_items.filter((_, i) => i !== idx)
+      return { ...q, reception_line_items: newItems, reception_amount_collected: newItems.length ? String(calcTotal(newItems)) : '' }
+    })
 
   const receptionTotal = queueForm.reception_line_items.reduce(
     (sum, i) => sum + (parseFloat(i.rate_per_day) || 0) * (parseInt(i.days) || 0), 0
@@ -312,7 +315,7 @@ export default function PatientProfileModal({ apiClient, onClose, onCreated, onU
                 ].map(({ type, icon, label }) => (
                   <button key={type} type="button"
                     onClick={() => setQueueForm((q) => ({
-                      ...q, reception_bill_type: type, reception_line_items: [],
+                      ...q, reception_bill_type: type, reception_line_items: [], reception_amount_collected: '',
                     }))}
                     className={`flex-1 py-2.5 text-sm font-semibold transition flex items-center justify-center gap-2
                       ${queueForm.reception_bill_type === type
