@@ -277,6 +277,17 @@ class BillCollectPartialAPIView(APIView):
             # ── 1. Reduce original bill & mark PARTIAL ────────────────────────
             # Reduce both total_bill and net_bill so the invariant
             # net_bill = total_bill - advance_paid - discount stays intact.
+            # Also append a negative line item so line_items still sum to total_bill.
+            orig_no = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
+            split_label = f"Partial Collection for {bill.bill_type} #{orig_no}"
+
+            updated_items = list(bill.line_items) + [{
+                "name":         split_label,
+                "rate_per_day": str(-amount),
+                "days":         1,
+                "amount":       str(-amount),
+            }]
+            bill.line_items = updated_items
             bill.total_bill = (Decimal(str(bill.total_bill)) - amount).quantize(Decimal("0.01"))
             bill.net_bill   = (net - amount).quantize(Decimal("0.01"))
             bill.payment_status = Bill.PaymentStatus.PARTIAL
@@ -311,7 +322,7 @@ class BillCollectPartialAPIView(APIView):
                 height          = bill.height,
                 pulse_rate      = bill.pulse_rate,
                 line_items      = [{
-                    "name":         f"Partial Collection for {bill.bill_type} #{bill.opd_no if bill.bill_type == 'OPD' else bill.ipd_no}",
+                    "name":         split_label,
                     "rate_per_day": str(amount),
                     "days":         1,
                     "amount":       str(amount),
