@@ -656,12 +656,18 @@ class QueueListCreateAPIView(generics.ListCreateAPIView):
         date_str = request.query_params.get("date")
         date = date_str or str(timezone.localdate())
         base = Queue.objects.filter(date=date)
-        response.data["summary"] = {
+        summary = {
             "all":         base.count(),
             "waiting":     base.filter(status="WAITING").count(),
             "with_doctor": base.filter(status="WITH_DOCTOR").count(),
             "done":        base.filter(status="DONE").count(),
         }
+        # Without pagination, response.data is a plain list — wrap it into a dict
+        # so the frontend can read both results and summary from the same response.
+        if isinstance(response.data, list):
+            response.data = {"results": response.data, "summary": summary}
+        else:
+            response.data["summary"] = summary
         return response
 
 
