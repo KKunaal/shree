@@ -10,6 +10,7 @@ from .views import (
     PatientBasicProfileListCreateAPIView,
     QueueDetailAPIView,
     QueueListCreateAPIView,
+    QueueMoveUpAPIView,
     ServiceRateDetailAPIView,
     ServiceRateListCreateAPIView,
 )
@@ -31,4 +32,5 @@ urlpatterns = [
     # ── Queue ─────────────────────────────────────────────────────────────────
     path("queue/", QueueListCreateAPIView.as_view(), name="queue-list"),
     path("queue/<int:pk>/", QueueDetailAPIView.as_view(), name="queue-detail"),
+    path("queue/<int:pk>/move-up/", QueueMoveUpAPIView.as_view(), name="queue-move-up"),
 ]

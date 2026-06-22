@@ -328,3 +328,57 @@ class QueueDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated]
 
+
+class QueueMoveUpAPIView(APIView):
+    """
+    POST /api/queue/<pk>/move-up/
+    Swap this entry's queue_number with the entry immediately above it
+    (same date, next-lower queue_number).
+    Returns { moved, displaced } — the two updated entries.
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.db import transaction
+        from django.shortcuts import get_object_or_404
+        from django.db.models import Max
+
+        item = get_object_or_404(Queue.objects.select_related("patient"), pk=pk)
+
+        # Entry immediately above: same date, highest queue_number still below item's
+        prev = (
+            Queue.objects.filter(date=item.date, queue_number__lt=item.queue_number)
+            .order_by("-queue_number")
+            .first()
+        )
+
+        if prev is None:
+            return Response({"detail": "Already first in queue."}, status=400)
+
+        with transaction.atomic():
+            # Temp number far above any real number to sidestep unique_together
+            temp = (
+                Queue.objects.filter(date=item.date)
+                .aggregate(max_no=Max("queue_number"))["max_no"]
+                + 1000
+            )
+            orig_item_no = item.queue_number
+            orig_prev_no = prev.queue_number
+
+            item.queue_number = temp
+            item.save(update_fields=["queue_number"])
+            prev.queue_number = orig_item_no
+            prev.save(update_fields=["queue_number"])
+            item.queue_number = orig_prev_no
+            item.save(update_fields=["queue_number"])
+
+        # Re-fetch with patient select_related so serializer has full data
+        item = Queue.objects.select_related("patient").get(pk=item.pk)
+        prev = Queue.objects.select_related("patient").get(pk=prev.pk)
+
+        return Response({
+            "moved":     QueueSerializer(item).data,
+            "displaced": QueueSerializer(prev).data,
+        })
+

@@ -102,6 +102,44 @@ export default function Queue({ onTabChange }) {
     }
   }
 
+  const handleMoveToWithDoctor = async (queueItem) => {
+    try {
+      const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'WITH_DOCTOR' })
+      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      showToast('✓ Moved to With Doctor')
+    } catch {
+      showToast('⚠ Failed to update status', 'error')
+    }
+  }
+
+  const handleMarkDone = async (queueItem) => {
+    try {
+      const { data } = await apiClient.patch(`/queue/${queueItem.id}/`, { status: 'DONE' })
+      setItems((prev) => prev.map((i) => (i.id === queueItem.id ? data : i)))
+      showToast('✓ Patient marked as Done')
+    } catch {
+      showToast('⚠ Failed to update status', 'error')
+    }
+  }
+
+  const handleMoveUp = async (queueItem) => {
+    try {
+      const { data } = await apiClient.post(`/queue/${queueItem.id}/move-up/`)
+      setItems((prev) =>
+        prev
+          .map((i) => {
+            if (i.id === data.moved.id)     return data.moved
+            if (i.id === data.displaced.id) return data.displaced
+            return i
+          })
+          .sort((a, b) => a.queue_number - b.queue_number)
+      )
+      showToast('✓ Patient moved up in queue')
+    } catch {
+      showToast('⚠ Failed to move patient up', 'error')
+    }
+  }
+
   const handleDeleteConfirmed = async () => {
     const item = confirmDelete
     setConfirmDelete(null)
@@ -208,9 +246,14 @@ export default function Queue({ onTabChange }) {
             <QueueCard
               key={item.id}
               item={item}
+              isFirst={items[0]?.id === item.id}
+              isDoctor={isDoctor}
               openMenu={openMenu}
               setOpenMenu={setOpenMenu}
               onStatusCycle={() => handleStatusCycle(item)}
+              onMoveToWithDoctor={() => { handleMoveToWithDoctor(item); setOpenMenu(null) }}
+              onMarkDone={() => { handleMarkDone(item); setOpenMenu(null) }}
+              onMoveUp={() => { handleMoveUp(item); setOpenMenu(null) }}
               onEdit={() => {
                 setEditPatient(item.patient)
                 setShowPatientModal(true)
@@ -295,7 +338,7 @@ export default function Queue({ onTabChange }) {
 }
 
 /* ── QueueCard ── */
-function QueueCard({ item, openMenu, setOpenMenu, onStatusCycle, onEdit, onDelete, onCreateBill }) {
+function QueueCard({ item, isFirst, isDoctor, openMenu, setOpenMenu, onStatusCycle, onMoveToWithDoctor, onMarkDone, onMoveUp, onEdit, onDelete, onCreateBill }) {
   const { patient, queue_number, status } = item
   const cfg = STATUS_CFG[status] ?? STATUS_CFG.WAITING
 
@@ -339,11 +382,19 @@ function QueueCard({ item, openMenu, setOpenMenu, onStatusCycle, onEdit, onDelet
               ⋮
             </button>
             {openMenu === item.id && (
-              <div className="absolute right-0 top-8 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-40 py-1 overflow-hidden"
+              <div className="absolute right-0 top-8 bg-white border border-gray-100 rounded-xl shadow-xl z-50 w-48 py-1 overflow-hidden"
                 onClick={(e) => e.stopPropagation()}>
-                <MenuOption icon="✏️" label="Edit Patient" onClick={onEdit} />
-                <MenuOption icon="🧾" label="Create Bill"  onClick={onCreateBill} />
-                <MenuOption icon="🗑️" label="Remove"       onClick={onDelete}     danger />
+                {/* ── Status actions ── */}
+                <MenuOption icon="👨‍⚕️" label="With Doctor"  onClick={onMoveToWithDoctor} />
+                {isDoctor && (
+                  <MenuOption icon="✅" label="Mark Done"    onClick={onMarkDone} />
+                )}
+                <MenuOption icon="⬆️" label="Move Up"       onClick={onMoveUp} disabled={isFirst} />
+                <div className="my-1 border-t border-gray-100" />
+                {/* ── Management actions ── */}
+                <MenuOption icon="✏️" label="Edit Patient"  onClick={onEdit} />
+                <MenuOption icon="🧾" label="Create Bill"   onClick={onCreateBill} />
+                <MenuOption icon="🗑️" label="Remove"        onClick={onDelete} danger />
               </div>
             )}
           </div>
@@ -389,11 +440,17 @@ function Chip({ label }) {
   )
 }
 
-function MenuOption({ icon, label, onClick, danger }) {
+function MenuOption({ icon, label, onClick, danger, disabled }) {
   return (
-    <button onClick={onClick}
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium transition
-        ${danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'}`}
+        ${disabled
+          ? 'text-gray-300 cursor-not-allowed'
+          : danger
+          ? 'text-red-600 hover:bg-red-50'
+          : 'text-gray-700 hover:bg-gray-50'}`}
     >
       <span>{icon}</span>{label}
     </button>
