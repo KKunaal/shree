@@ -277,10 +277,29 @@ class PatientBasicProfileListCreateAPIView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         profile = serializer.save()
+        q = self.request.data.get("queue", {})
         Queue.objects.create(
             patient=profile,
             queue_number=Queue.next_number_for_today(),
+            reception_bill_type=q.get("reception_bill_type", "OPD"),
+            reception_line_items=q.get("reception_line_items", []),
+            reception_amount_collected=q.get("reception_amount_collected") or "0.00",
+            reception_paid_via=q.get("reception_paid_via", "CASH"),
         )
+
+    def create(self, request, *args, **kwargs):
+        """Override to return the created Queue entry (with nested patient) instead of
+        just the PatientBasicProfile, so the frontend gets queue_id and reception data."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        queue_entry = (
+            Queue.objects.select_related("patient")
+            .filter(patient=serializer.instance)
+            .order_by("-created_at")
+            .first()
+        )
+        return Response(QueueSerializer(queue_entry).data, status=201)
 
 
 class PatientBasicProfileDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -380,5 +399,57 @@ class QueueMoveUpAPIView(APIView):
         return Response({
             "moved":     QueueSerializer(item).data,
             "displaced": QueueSerializer(prev).data,
+        })
+
+
+class QueueMoveDownAPIView(APIView):
+    """
+    POST /api/queue/<pk>/move-down/
+    Swap this entry's queue_number with the entry immediately below it
+    (same date, next-higher queue_number).
+    Returns { moved, displaced } — the two updated entries.
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.db import transaction
+        from django.shortcuts import get_object_or_404
+        from django.db.models import Max
+
+        item = get_object_or_404(Queue.objects.select_related("patient"), pk=pk)
+
+        # Entry immediately below: same date, lowest queue_number still above item's
+        nxt = (
+            Queue.objects.filter(date=item.date, queue_number__gt=item.queue_number)
+            .order_by("queue_number")
+            .first()
+        )
+
+        if nxt is None:
+            return Response({"detail": "Already last in queue."}, status=400)
+
+        with transaction.atomic():
+            temp = (
+                Queue.objects.filter(date=item.date)
+                .aggregate(max_no=Max("queue_number"))["max_no"]
+                + 1000
+            )
+            orig_item_no = item.queue_number
+            orig_nxt_no  = nxt.queue_number
+
+            item.queue_number = temp
+            item.save(update_fields=["queue_number"])
+            nxt.queue_number = orig_item_no
+            nxt.save(update_fields=["queue_number"])
+            item.queue_number = orig_nxt_no
+            item.save(update_fields=["queue_number"])
+
+        item = Queue.objects.select_related("patient").get(pk=item.pk)
+        nxt  = Queue.objects.select_related("patient").get(pk=nxt.pk)
+
+        return Response({
+            "moved":     QueueSerializer(item).data,
+            "displaced": QueueSerializer(nxt).data,
         })
 

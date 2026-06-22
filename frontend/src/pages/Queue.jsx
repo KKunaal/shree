@@ -79,8 +79,8 @@ export default function Queue({ onTabChange }) {
     return () => document.removeEventListener('click', close)
   }, [openMenu])
 
-  const handlePatientCreated = () => {
-    setRefreshTick((t) => t + 1)
+  const handlePatientCreated = (queueData) => {
+    setItems((prev) => [...prev, queueData].sort((a, b) => a.queue_number - b.queue_number))
     showToast('✓ Patient added to queue')
   }
 
@@ -117,7 +117,15 @@ export default function Queue({ onTabChange }) {
   const handleMarkDone = (queueItem) => {
     // Open bill creation first; queue is only patched to DONE after bill is saved
     setPendingDoneItem(queueItem)
-    setBillPrefill(queueItem.patient)
+    setBillPrefill({
+      ...queueItem.patient,
+      _queue: {
+        reception_bill_type:        queueItem.reception_bill_type,
+        reception_line_items:       queueItem.reception_line_items,
+        reception_amount_collected: queueItem.reception_amount_collected,
+        reception_paid_via:         queueItem.reception_paid_via,
+      },
+    })
     setShowBillModal(true)
   }
 
@@ -529,6 +537,15 @@ function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onS
       {/* Condition notes */}
       {patient.condition_notes && (
         <p className="text-xs text-gray-400 mt-2 italic">📝 {patient.condition_notes}</p>
+      )}
+
+      {/* Reception collection badge */}
+      {parseFloat(item.reception_amount_collected) > 0 && (
+        <div className="mt-2">
+          <span className="text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5">
+            💰 ₹{parseFloat(item.reception_amount_collected).toLocaleString('en-IN')} collected at reception
+          </span>
+        </div>
       )}
     </div>
   )

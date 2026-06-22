@@ -226,6 +226,10 @@ class QueueSerializer(serializers.ModelSerializer):
         fields = [
             "id", "patient", "patient_id",
             "queue_number", "status", "date",
+            "reception_bill_type",
+            "reception_line_items",
+            "reception_amount_collected",
+            "reception_paid_via",
             "created_at", "updated_at",
         ]
         read_only_fields = ("queue_number", "date", "created_at", "updated_at")

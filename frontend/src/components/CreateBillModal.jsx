@@ -50,7 +50,7 @@ const todayISO = () => new Date().toLocaleDateString('en-CA')
 
 export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreated, onUpdated, editBill, prefillData }) {
   const isEdit = Boolean(editBill)
-  const defaultType = editBill?.bill_type || 'IPD'
+  const defaultType = editBill?.bill_type || prefillData?._queue?.reception_bill_type || 'IPD'
 
   const [billType, setBillType] = useState(defaultType)
   const [step, setStep] = useState(1)
@@ -60,6 +60,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
     if (!editBill) {
       // Pre-fill from patient profile when opening "Create Bill" from Queue
       const pre = prefillData || {}
+      const q = pre._queue || {}
       const common = {
         patient_name: pre.patient_name || '',
         address:      pre.address      || '',
@@ -69,8 +70,9 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         pulse_rate:   pre.pulse_rate != null ? String(pre.pulse_rate) : '',
         weight:       pre.weight     != null ? String(pre.weight)     : '',
         height:       pre.height     != null ? String(pre.height)     : '',
+        advance_paid: q.reception_amount_collected ? String(q.reception_amount_collected) : '0',
       }
-      return billType === 'IPD'
+      return defaultType === 'IPD'
         ? { ...emptyIPD, ...common, admitted_on: today }
         : { ...emptyOPD, ...common, visit_date: today }
     }
@@ -95,13 +97,23 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
     }
   })
 
-  const [lineItems, setLineItems] = useState(() =>
-    editBill?.line_items?.length
-      ? editBill.line_items.map((i) => ({
-          name: i.name, rate_per_day: String(i.rate_per_day), days: String(i.days),
-        }))
-      : []
-  )
+  const [lineItems, setLineItems] = useState(() => {
+    if (editBill?.line_items?.length) {
+      return editBill.line_items.map((i) => ({
+        name: i.name, rate_per_day: String(i.rate_per_day), days: String(i.days),
+      }))
+    }
+    const rItems = prefillData?._queue?.reception_line_items
+    if (!editBill && rItems?.length) {
+      return rItems.map((i) => ({
+        name: i.name,
+        rate_per_day: String(i.rate_per_day || i.rate || '0'),
+        days: String(i.days || 1),
+        _fromReception: true,
+      }))
+    }
+    return []
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -385,6 +397,22 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
           {/* ── Step 3: Charges & Summary ── */}
           {step === 3 && (
             <div className="space-y-4">
+              {/* Reception collection banner */}
+              {!isEdit && parseFloat(prefillData?._queue?.reception_amount_collected) > 0 && (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5 text-xs text-green-700">
+                  <span className="text-sm">💰</span>
+                  <span>
+                    <span className="font-semibold">
+                      ₹{parseFloat(prefillData._queue.reception_amount_collected).toLocaleString('en-IN')}
+                    </span>
+                    {' '}collected at reception via{' '}
+                    {prefillData._queue.reception_paid_via === 'CASH' ? 'Cash'
+                      : prefillData._queue.reception_paid_via === 'UPI' ? 'UPI' : 'Online'}
+                    {' '}· Set as advance paid
+                  </span>
+                </div>
+              )}
+
               {/* Quick-add chips */}
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick-add charges</p>
@@ -415,7 +443,12 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
                   <div className="space-y-1.5">
                     {lineItems.map((item, idx) => (
                       <div key={idx} className="grid grid-cols-12 items-center gap-1 bg-gray-50 rounded-lg px-2 py-1.5">
-                        <div className="col-span-4 text-xs font-medium text-gray-700 truncate leading-tight">{item.name}</div>
+                        <div className="col-span-4 text-xs font-medium text-gray-700 truncate leading-tight">
+                          {item.name}
+                          {item._fromReception && (
+                            <span className="ml-1 text-[9px] bg-green-100 text-green-600 rounded px-1 align-middle font-semibold">Reception</span>
+                          )}
+                        </div>
                         <div className="col-span-3">
                           {isDoctor ? (
                             <input type="number" min="0" value={item.rate_per_day}
