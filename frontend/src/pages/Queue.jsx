@@ -456,7 +456,8 @@ function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onS
                 )}
                 {/* Doctor-only actions */}
                 {isDoctor && status !== 'DONE' && (
-                  <MenuOption icon="✅" label="Mark Done" onClick={onMarkDone} />
+                  <MenuOption icon="✅" label="Mark Done" onClick={onMarkDone}
+                    hint="Creates the bill & marks patient as Done" />
                 )}
                 {isDoctor && status !== 'WAITING' && (
                   <MenuOption icon="↩️" label="Move to Waiting" onClick={onMoveToWaiting} />
