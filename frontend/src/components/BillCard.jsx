@@ -20,6 +20,8 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
   const [expanded, setExpanded] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [paymentSaving, setPaymentSaving] = useState(false)
+  const [confirmPaid, setConfirmPaid] = useState(false)
+  const [pendingPaidVia, setPendingPaidVia] = useState(bill.paid_via || 'CASH')
   const menuRef = useRef(null)
 
   const isOPD     = bill.bill_type === 'OPD'
@@ -52,7 +54,20 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
 
   const changeStatus = (newStatus) => {
     if (newStatus === bill.payment_status) return
+    if (!isDoctor) {
+      // Reception can only move to PAID (with popup); PARTIAL is set by collect-partial API only
+      if (newStatus === 'PAID') {
+        setPendingPaidVia(bill.paid_via || 'CASH')
+        setConfirmPaid(true)
+      }
+      return
+    }
     savePayment({ payment_status: newStatus, paid_via: bill.paid_via || 'CASH' })
+  }
+
+  const confirmMarkPaid = () => {
+    savePayment({ payment_status: 'PAID', paid_via: pendingPaidVia })
+    setConfirmPaid(false)
   }
 
   const changePaidVia = (newValue) => {
@@ -60,10 +75,11 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
   }
 
   return (
-    <div
-      className="bg-white rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
-      onClick={() => setExpanded((e) => !e)}
-    >
+    <>
+      <div
+        className="bg-white rounded-xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow"
+        onClick={() => setExpanded((e) => !e)}
+      >
       {/* Summary row */}
       <div className="flex items-start justify-between px-4 pt-4 pb-2 gap-3">
         <div className="flex-1 min-w-0">
@@ -80,6 +96,14 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
             {bill.remote_row_ref && (
               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full shrink-0">
                 ✓ Sheet
+              </span>
+            )}
+            {bill.callout && (
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 border
+                ${bill.callout === 'Bill settled'
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                  : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                {bill.callout === 'Bill settled' ? '✅ Bill settled' : `📋 ${bill.callout}`}
               </span>
             )}
           </div>
@@ -177,36 +201,44 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
         className="flex items-center gap-2 flex-wrap px-4 pb-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 flex-wrap w-full">
-          {/* 3-state status dropdown */}
-          <PayStatusSelector
-            value={bill.payment_status}
-            disabled={paymentSaving}
-            onChange={changeStatus}
-          />
-
-          {/* Payment via (PAID only) */}
-          {isPaid && (
-            <PayViaSelector
-              value={bill.paid_via || 'CASH'}
+        {isDoctor ? (
+          /* ── Doctor: 2-option dropdown (UNPAID / PAID) ── */
+          <>
+            <PayStatusSelector
+              value={bill.payment_status}
               disabled={paymentSaving}
-              onChange={changePaidVia}
+              onChange={changeStatus}
             />
-          )}
-
-          {/* Partial summary chip — shows the advance already received */}
-          {isPartial && parseFloat(bill.advance_paid) > 0 && (
-            <span className="text-[10px] text-yellow-700 bg-yellow-50 border border-yellow-100 px-2 py-1 rounded-lg ml-auto">
-              {fmt(bill.advance_paid)} received · {PAID_VIA_LABELS[bill.advance_paid_via] || bill.advance_paid_via || 'Cash'}
-            </span>
-          )}
-
-          {isPaid && (
-            <span className="text-[10px] text-gray-400 ml-auto">
-              via {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
-            </span>
-          )}
-        </div>
+            {isPaid && (
+              <PayViaSelector
+                value={bill.paid_via || 'CASH'}
+                disabled={paymentSaving}
+                onChange={changePaidVia}
+              />
+            )}
+            {isPaid && (
+              <span className="text-[10px] text-gray-400 ml-auto">
+                via {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
+              </span>
+            )}
+          </>
+        ) : isPaid ? (
+          /* ── Reception: PAID is immutable ── */
+          <span className="text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg">
+            ✓ Paid · {PAID_VIA_LABELS[bill.paid_via] || bill.paid_via}
+          </span>
+        ) : (
+          /* ── Reception: UNPAID or PARTIAL → show "Mark as Paid" button ── */
+          <button
+            disabled={paymentSaving}
+            onClick={() => { setPendingPaidVia(bill.paid_via || 'CASH'); setConfirmPaid(true) }}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border bg-red-50 border-red-200 text-red-700 hover:bg-red-100 disabled:opacity-60 active:scale-95 transition"
+          >
+            {paymentSaving
+              ? <span className="animate-spin leading-none">⏳</span>
+              : '✓ Mark as Paid'}
+          </button>
+        )}
       </div>
 
       {/* Expanded detail */}
@@ -263,21 +295,74 @@ export default function BillCard({ bill, isDoctor, onEdit, onDelete, onPrint, on
         </div>
       )}
     </div>
+
+    {/* ── Reception confirmation popup — Mark as Paid ─────────────────── */}
+    {confirmPaid && (
+      <div
+        className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+        onClick={() => setConfirmPaid(false)}
+      >
+        <div
+          className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="text-3xl mb-2 text-center">✓</div>
+          <h3 className="text-base font-bold text-gray-800 text-center">Move to Paid?</h3>
+          <p className="text-sm text-gray-500 mt-1.5 text-center">
+            Are you sure you want to mark this bill as paid?
+          </p>
+          <p className="text-xs text-orange-700 mt-2 text-center bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">
+            ⚠ Only doctors can change the status after it's moved to paid.
+          </p>
+          <div className="mt-3">
+            <p className="text-xs font-medium text-gray-600 mb-1.5">Payment received via</p>
+            <PayViaSelector
+              value={pendingPaidVia}
+              disabled={paymentSaving}
+              onChange={setPendingPaidVia}
+            />
+          </div>
+          <div className="flex gap-3 mt-4">
+            <button
+              onClick={() => setConfirmPaid(false)}
+              className="flex-1 border border-gray-300 text-gray-600 rounded-xl py-2.5 text-sm font-medium hover:bg-gray-50 transition"
+            >
+              No, cancel
+            </button>
+            <button
+              disabled={paymentSaving}
+              onClick={confirmMarkPaid}
+              className="flex-1 bg-emerald-600 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-emerald-700 active:scale-95 transition disabled:opacity-50"
+            >
+              {paymentSaving ? '⏳' : 'Yes, mark paid'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   )
 }
 
-/* ── 3-state payment status dropdown ───────────────────────────────────── */
+/* ── Payment status dropdown (doctor only — UNPAID ↔ PAID) ─────────────── */
 
+// Only UNPAID and PAID are selectable; PARTIAL is set only via collect-partial API
 const STATUS_OPTIONS = [
-  { value: 'UNPAID',  label: '○ Unpaid',         cls: 'text-orange-700',  bg: 'bg-orange-50  border-orange-200  hover:bg-orange-100'  },
-  { value: 'PARTIAL', label: '◑ Partially Paid', cls: 'text-yellow-700',  bg: 'bg-yellow-50  border-yellow-200  hover:bg-yellow-100'  },
-  { value: 'PAID',    label: '✓ Paid',            cls: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' },
+  { value: 'UNPAID', label: '○ Unpaid', cls: 'text-orange-700',  bg: 'bg-orange-50  border-orange-200  hover:bg-orange-100'  },
+  { value: 'PAID',   label: '✓ Paid',   cls: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100' },
 ]
+
+// Full display map including PARTIAL (shown as trigger label when bill is PARTIAL)
+const STATUS_DISPLAY = {
+  UNPAID:  { label: '○ Unpaid',  cls: 'text-orange-700',  bg: 'bg-orange-50  border-orange-200'  },
+  PARTIAL: { label: '◑ Partial', cls: 'text-yellow-700',  bg: 'bg-yellow-50  border-yellow-200'  },
+  PAID:    { label: '✓ Paid',    cls: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+}
 
 function PayStatusSelector({ value, disabled, onChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
-  const current = STATUS_OPTIONS.find(o => o.value === value) || STATUS_OPTIONS[0]
+  const current = STATUS_DISPLAY[value] || STATUS_DISPLAY.UNPAID
 
   useEffect(() => {
     if (!open) return
@@ -306,7 +391,7 @@ function PayStatusSelector({ value, disabled, onChange }) {
         }
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-[170px] py-1">
+        <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 min-w-[140px] py-1">
           {STATUS_OPTIONS.map(opt => (
             <button
               key={opt.value}
