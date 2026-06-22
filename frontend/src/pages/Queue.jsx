@@ -544,6 +544,9 @@ function QueueCard({ item, isFirst, isLast, isDoctor, openMenu, setOpenMenu, onS
         <div className="mt-2">
           <span className="text-[10px] font-medium bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5">
             💰 ₹{parseFloat(item.reception_amount_collected).toLocaleString('en-IN')} collected at reception
+            {item.reception_paid_via && (
+              <> · {{ CASH: '💵 Cash', UPI: '📲 UPI', ONLINE: '🌐 Online' }[item.reception_paid_via] || item.reception_paid_via}</>
+            )}
           </span>
         </div>
       )}
