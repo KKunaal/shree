@@ -35,14 +35,14 @@ const emptyIPD = {
   age: '', pulse_rate: '', weight: '', height: '',
   admitted_on: '', discharged_on: '',
   room_no: '', ward: '', total_stay: '',
-  advance_paid: '0', discount: '', discount_note: '',
+  advance_paid: '0', advance_paid_via: 'CASH', discount: '', discount_note: '',
 }
 
 const emptyOPD = {
   patient_name: '', address: '', mobile_no: '', gender: '',
   age: '', pulse_rate: '', weight: '', height: '',
   visit_date: '',
-  advance_paid: '0', discount: '', discount_note: '',
+  advance_paid: '0', advance_paid_via: 'CASH', discount: '', discount_note: '',
 }
 
 /** Returns today's date as YYYY-MM-DD in the browser's local time zone. */
@@ -73,6 +73,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         advance_paid: parseFloat(q.reception_amount_collected) > 0
             ? String(q.reception_amount_collected)
             : '0',
+        advance_paid_via: q.reception_paid_via || 'CASH',
       }
       return defaultType === 'IPD'
         ? { ...emptyIPD, ...common, admitted_on: today }
@@ -94,6 +95,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
       total_stay:     String(editBill.total_stay ?? ''),
       visit_date:     editBill.visit_date || '',
       advance_paid:   String(editBill.advance_paid ?? '0'),
+      advance_paid_via: editBill.advance_paid_via || 'CASH',
       discount:       editBill.discount != null ? String(editBill.discount) : '',
       discount_note:  editBill.discount_note || '',
     }
@@ -136,7 +138,11 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
       )
       const amt = parseFloat(prefillData._queue.reception_amount_collected)
       if (amt > 0) {
-        setForm((f) => ({ ...f, advance_paid: String(prefillData._queue.reception_amount_collected) }))
+        setForm((f) => ({
+          ...f,
+          advance_paid: String(prefillData._queue.reception_amount_collected),
+          advance_paid_via: prefillData._queue.reception_paid_via || 'CASH',
+        }))
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,6 +201,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         age:    form.age !== '' ? parseInt(form.age) : null,
         pulse_rate: form.pulse_rate !== '' ? parseInt(form.pulse_rate) : null,
         advance_paid: form.advance_paid,
+        advance_paid_via: form.advance_paid_via,
         discount: form.discount !== '' ? form.discount : null,
         discount_note: form.discount_note,
         line_items: lineItems.map((i) => ({

@@ -112,6 +112,11 @@ class Bill(models.Model):
     paid_via = models.CharField(
         max_length=10, choices=PaidVia.choices, default=PaidVia.UPI
     )
+    # Payment mode used for the advance (may differ from paid_via when reception
+    # collected the advance separately before the doctor settled the balance).
+    advance_paid_via = models.CharField(
+        max_length=10, choices=PaidVia.choices, default=PaidVia.CASH, blank=True
+    )
 
     remote_row_ref = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -161,8 +166,9 @@ class Metrics(models.Model):
     def rebuild(cls):
         """
         Recompute every cumulative field from PAID bills only. Idempotent.
-        Touches the DB with 1 aggregate query + 1 UPDATE.
-        Revenue = advance_paid + net_bill (total actually collected).
+        Revenue = advance_paid + net_bill, each split by its own payment mode:
+          advance_paid → advance_paid_via bucket
+          net_bill     → paid_via bucket
         """
         from django.db.models import ExpressionWrapper, F, Q, Sum
         from django.db.models import DecimalField as DDF
@@ -175,18 +181,21 @@ class Metrics(models.Model):
         paid = Bill.objects.filter(payment_status="PAID")
         agg = paid.aggregate(
             total=Sum(_rev),
-            cash=Sum(_rev, filter=Q(paid_via="CASH")),
-            upi=Sum(_rev, filter=Q(paid_via="UPI")),
-            online=Sum(_rev, filter=Q(paid_via="ONLINE")),
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_net=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
+            online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
         obj = cls.instance()
         obj.total_ipd_bills = paid.filter(bill_type="IPD").count()
         obj.total_opd_bills = paid.filter(bill_type="OPD").count()
-        obj.total_collected = agg["total"]  or Z
-        obj.total_cash      = agg["cash"]   or Z
-        obj.total_upi       = agg["upi"]    or Z
-        obj.total_online    = agg["online"] or Z
+        obj.total_collected = agg["total"] or Z
+        obj.total_cash      = (agg["cash_adv"]   or Z) + (agg["cash_net"]   or Z)
+        obj.total_upi       = (agg["upi_adv"]    or Z) + (agg["upi_net"]    or Z)
+        obj.total_online    = (agg["online_adv"] or Z) + (agg["online_net"] or Z)
         obj.save()
         return obj
 

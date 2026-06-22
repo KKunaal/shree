@@ -39,7 +39,7 @@ class BillSerializer(serializers.ModelSerializer):
             # Shared patient info
             "patient_name", "address", "mobile_no", "gender", "weight", "height", "age", "pulse_rate",
             "line_items",
-            "total_bill", "advance_paid", "discount", "discount_note", "net_bill",
+            "total_bill", "advance_paid", "advance_paid_via", "discount", "discount_note", "net_bill",
             "payment_status", "paid_via",
             "remote_row_ref", "created_at",
         ]

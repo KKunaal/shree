@@ -156,9 +156,12 @@ class MetricsAPIView(APIView):
         today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
         today_agg = today_paid.aggregate(
             total=Sum(_REVENUE),
-            cash=Sum(_REVENUE, filter=Q(paid_via="CASH")),
-            upi=Sum(_REVENUE, filter=Q(paid_via="UPI")),
-            online=Sum(_REVENUE, filter=Q(paid_via="ONLINE")),
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_net=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
+            online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
@@ -173,10 +176,10 @@ class MetricsAPIView(APIView):
             # ── today (live, PAID only) ───────────────────────────────────────
             "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
             "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
-            "today_collected":  str(today_agg["total"]  or Z),
-            "today_cash":       str(today_agg["cash"]   or Z),
-            "today_upi":        str(today_agg["upi"]    or Z),
-            "today_online":     str(today_agg["online"] or Z),
+            "today_collected":  str(today_agg["total"] or Z),
+            "today_cash":       str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)),
+            "today_upi":        str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)),
+            "today_online":     str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)),
             # ── meta ──────────────────────────────────────────────────────────
             "as_of":            today.isoformat(),
             "metrics_updated_at": m.updated_at,
@@ -232,9 +235,12 @@ class MetricsRefreshAPIView(APIView):
         today_paid = Bill.objects.filter(created_at__date=today, payment_status="PAID")
         today_agg = today_paid.aggregate(
             total=Sum(_REVENUE),
-            cash=Sum(_REVENUE, filter=Q(paid_via="CASH")),
-            upi=Sum(_REVENUE, filter=Q(paid_via="UPI")),
-            online=Sum(_REVENUE, filter=Q(paid_via="ONLINE")),
+            cash_adv=Sum("advance_paid", filter=Q(advance_paid_via="CASH")),
+            upi_adv=Sum("advance_paid",  filter=Q(advance_paid_via="UPI")),
+            online_adv=Sum("advance_paid", filter=Q(advance_paid_via="ONLINE")),
+            cash_net=Sum("net_bill", filter=Q(paid_via="CASH")),
+            upi_net=Sum("net_bill",  filter=Q(paid_via="UPI")),
+            online_net=Sum("net_bill", filter=Q(paid_via="ONLINE")),
         )
         Z = Decimal("0.00")
 
@@ -249,10 +255,10 @@ class MetricsRefreshAPIView(APIView):
             # ── today (always live) ───────────────────────────────────────────
             "today_ipd_bills":  today_paid.filter(bill_type="IPD").count(),
             "today_opd_bills":  today_paid.filter(bill_type="OPD").count(),
-            "today_collected":  str(today_agg["total"]  or Z),
-            "today_cash":       str(today_agg["cash"]   or Z),
-            "today_upi":        str(today_agg["upi"]    or Z),
-            "today_online":     str(today_agg["online"] or Z),
+            "today_collected":  str(today_agg["total"] or Z),
+            "today_cash":       str((today_agg["cash_adv"] or Z) + (today_agg["cash_net"] or Z)),
+            "today_upi":        str((today_agg["upi_adv"]  or Z) + (today_agg["upi_net"]  or Z)),
+            "today_online":     str((today_agg["online_adv"] or Z) + (today_agg["online_net"] or Z)),
             # ── meta ──────────────────────────────────────────────────────────
             "as_of":            today.isoformat(),
             "metrics_updated_at": m.updated_at,
