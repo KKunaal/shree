@@ -24,9 +24,9 @@ export default function Bills({ onTabChange }) {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [filters, setFilters] = useState({
-    billType: 'ALL',       // 'ALL' | 'IPD' | 'OPD'
-    paymentStatus: 'ALL',  // 'ALL' | 'PAID' | 'UNPAID' | 'PARTIAL'
-    dateMode: 'NONE',      // 'NONE' | 'SINGLE' | 'RANGE'
+    billType: 'ALL',
+    paymentStatus: 'UNPAID', // default to unpaid bills
+    dateMode: 'NONE',
     date: '',
     dateFrom: '',
     dateTo: '',
