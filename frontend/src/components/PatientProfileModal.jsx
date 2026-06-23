@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useServiceRates } from '../hooks/useServiceRates'
 
 const CONDITIONS = [
   { key: 'has_diabetes',       label: 'Diabetes',       emoji: '🩸' },
@@ -9,36 +10,6 @@ const CONDITIONS = [
   { key: 'is_pregnant',        label: 'Pregnant',        emoji: '🤰' },
   { key: 'has_thyroid',        label: 'Thyroid',         emoji: '🦋' },
   { key: 'has_kidney_disease', label: 'Kidney Disease',  emoji: '🫘' },
-]
-
-const IPD_CHARGES = [
-  { name: 'Room Charges – General', rate: '1500' },
-  { name: 'Room Charges – Private', rate: '2500' },
-  { name: 'I.P.D Charges',          rate: '1400' },
-  { name: 'Monitoring',             rate: '100'  },
-  { name: 'Neocan',                 rate: '300'  },
-  { name: 'Consulting Charges',     rate: '300'  },
-  { name: 'IV Fluids',              rate: '150'  },
-  { name: 'Nursing Charges',        rate: '300'  },
-  { name: 'Nebulization',           rate: '20'   },
-  { name: 'O2 Charges',             rate: '1500' },
-  { name: 'Emergency Charges',      rate: '500'  },
-  { name: 'Procedure Charges',      rate: ''     },
-  { name: 'Other Charges',          rate: ''     },
-]
-
-const OPD_CHARGES = [
-  { name: 'OPD – First Visit',      rate: '300' },
-  { name: 'OPD – Second Visit',     rate: '200' },
-  { name: 'OPD – Follow-up',        rate: '150' },
-  { name: 'Emergency Consultation', rate: '500' },
-  { name: 'Dressing',               rate: '200' },
-  { name: 'Injection / IV',         rate: '50'  },
-  { name: 'ECG',                    rate: '250' },
-  { name: 'X-Ray',                  rate: '400' },
-  { name: 'Sonography',             rate: '700' },
-  { name: 'Procedure Charges',      rate: ''    },
-  { name: 'Other Charges',          rate: ''    },
 ]
 
 const emptyForm = {
@@ -53,6 +24,7 @@ const emptyForm = {
 export default function PatientProfileModal({ apiClient, onClose, onCreated, onUpdated, editPatient }) {
   const isEdit = Boolean(editPatient)
   const totalSteps = isEdit ? 2 : 3
+  const { ipdRates, opdRates, loading: ratesLoading } = useServiceRates(apiClient)
   const [step, setStep] = useState(1)
 
   const [form, setForm] = useState(() => {
@@ -92,7 +64,7 @@ export default function PatientProfileModal({ apiClient, onClose, onCreated, onU
     reception_paid_via: 'CASH',
   })
 
-  const charges = queueForm.reception_bill_type === 'OPD' ? OPD_CHARGES : IPD_CHARGES
+  const charges = queueForm.reception_bill_type === 'OPD' ? opdRates : ipdRates
 
   const calcTotal = (items) =>
     items.reduce((sum, i) => sum + (parseFloat(i.rate_per_day) || 0) * (parseInt(i.days) || 0), 0)
@@ -330,18 +302,30 @@ export default function PatientProfileModal({ apiClient, onClose, onCreated, onU
               {/* Quick-add chips */}
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick-add charges</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {charges.map((ct) => (
-                    <button key={ct.name} type="button" onClick={() => addReceptionCharge(ct)}
-                      className={`text-xs border rounded-full px-3 py-1 active:scale-95 transition
-                        ${queueForm.reception_bill_type === 'OPD'
-                          ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                          : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
-                    >
-                      + {ct.name}
-                    </button>
-                  ))}
-                </div>
+                {ratesLoading ? (
+                  <p className="text-xs text-gray-400 animate-pulse py-1">Loading charges…</p>
+                ) : charges.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-1">
+                    No active charges configured.
+                    {' '}Ask the doctor to add them in the <strong>Charges</strong> tab.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {charges.map((ct) => (
+                      <button key={ct.name} type="button" onClick={() => addReceptionCharge(ct)}
+                        className={`text-xs border rounded-full px-3 py-1 active:scale-95 transition
+                          ${queueForm.reception_bill_type === 'OPD'
+                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                            : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
+                      >
+                        + {ct.name}
+                        {ct.rate && ct.rate !== '0' && (
+                          <span className="ml-1 opacity-60">₹{ct.rate}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Line items */}

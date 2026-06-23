@@ -102,12 +102,16 @@ class BillPagination(PageNumberPagination):
 
 class ServiceRateListCreateAPIView(generics.ListCreateAPIView):
     """
-    GET  /api/rates/  → list all service rates          (doctor only)
-    POST /api/rates/  → create a new service rate       (doctor only)
+    GET  /api/rates/  → list all service rates   (any authenticated user)
+    POST /api/rates/  → create a new service rate (doctor only)
     """
     serializer_class = ServiceRateSerializer
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated, IsDoctor]
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsDoctor()]
 
     def get_queryset(self):
         qs = ServiceRate.objects.all()
@@ -122,7 +126,7 @@ class ServiceRateListCreateAPIView(generics.ListCreateAPIView):
 
 class ServiceRateDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """
-    GET    /api/rates/<id>/  → retrieve        (doctor only)
+    GET    /api/rates/<id>/  → retrieve        (any authenticated user)
     PUT    /api/rates/<id>/  → full update     (doctor only)
     PATCH  /api/rates/<id>/  → partial update  (doctor only)
     DELETE /api/rates/<id>/  → delete          (doctor only)
@@ -130,7 +134,11 @@ class ServiceRateDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ServiceRate.objects.all()
     serializer_class = ServiceRateSerializer
     authentication_classes = [FixedBasicAuthentication]
-    permission_classes = [IsAuthenticated, IsDoctor]
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsDoctor()]
 
 
 class BillListCreateAPIView(generics.ListCreateAPIView):

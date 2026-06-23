@@ -1,34 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const IPD_CHARGES = [
-  { name: 'Room Charges – General', rate: '1500' },
-  { name: 'Room Charges – Private', rate: '2500' },
-  { name: 'I.P.D Charges',          rate: '1400' },
-  { name: 'Monitoring',             rate: '100'  },
-  { name: 'Neocan',                 rate: '300'  },
-  { name: 'Consulting Charges',     rate: '300'  },
-  { name: 'IV Fluids',              rate: '150'  },
-  { name: 'Nursing Charges',        rate: '300'  },
-  { name: 'Nebulization',           rate: '20'   },
-  { name: 'O2 Charges',             rate: '1500' },
-  { name: 'Emergency Charges',      rate: '500'  },
-  { name: 'Procedure Charges',      rate: ''     },
-  { name: 'Other Charges',          rate: ''     },
-]
-
-const OPD_CHARGES = [
-  { name: 'OPD – First Visit',      rate: '300' },
-  { name: 'OPD – Second Visit',     rate: '200' },
-  { name: 'OPD – Follow-up',        rate: '150' },
-  { name: 'Emergency Consultation', rate: '500' },
-  { name: 'Dressing',               rate: '200' },
-  { name: 'Injection / IV',         rate: '50'  },
-  { name: 'ECG',                    rate: '250' },
-  { name: 'X-Ray',                  rate: '400' },
-  { name: 'Sonography',             rate: '700' },
-  { name: 'Procedure Charges',      rate: ''    },
-  { name: 'Other Charges',          rate: ''    },
-]
+import { useServiceRates } from '../hooks/useServiceRates'
 
 const emptyIPD = {
   patient_name: '', address: '', mobile_no: '', gender: '',
@@ -120,6 +91,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const { ipdRates, opdRates, loading: ratesLoading } = useServiceRates(apiClient)
 
   // Safety net: if component somehow mounted before prefillData._queue was ready,
   // seed lineItems from reception data once (only when lineItems is empty and
@@ -160,7 +132,7 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
 
   const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }))
 
-  const charges = billType === 'OPD' ? OPD_CHARGES : IPD_CHARGES
+  const charges = billType === 'OPD' ? opdRates : ipdRates
   const defaultDays = billType === 'OPD' ? '1' : (form.total_stay || '1')
 
   const addCharge = (ct) =>
@@ -453,18 +425,30 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
               {/* Quick-add chips */}
               <div>
                 <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Quick-add charges</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {charges.map((ct) => (
-                    <button
-                      key={ct.name}
-                      onClick={() => addCharge(ct)}
-                      className={`text-xs border rounded-full px-3 py-1 active:scale-95 transition
-                        ${billType === 'OPD' ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
-                    >
-                      + {ct.name}
-                    </button>
-                  ))}
-                </div>
+                {ratesLoading ? (
+                  <p className="text-xs text-gray-400 animate-pulse py-1">Loading charges…</p>
+                ) : charges.length === 0 ? (
+                  <p className="text-xs text-gray-400 py-1">
+                    No active {billType} charges configured.
+                    {' '}Add them in the <strong>Charges</strong> tab.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {charges.map((ct) => (
+                      <button
+                        key={ct.name}
+                        onClick={() => addCharge(ct)}
+                        className={`text-xs border rounded-full px-3 py-1 active:scale-95 transition
+                          ${billType === 'OPD' ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'}`}
+                      >
+                        + {ct.name}
+                        {ct.rate && ct.rate !== '0' && (
+                          <span className="ml-1 opacity-60">₹{ct.rate}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Added charges */}
