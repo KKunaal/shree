@@ -383,7 +383,7 @@ class BillCollectPartialAPIView(APIView):
             )
 
         orig_no = bill.opd_no if bill.bill_type == "OPD" else bill.ipd_no
-        label   = f"Partial Collection for {bill.bill_type} #{orig_no}"
+        label   = f"Partial Collection for {bill.bill_type} #{orig_no} via {bill.paid_via}"
 
         PartialCollectRequest.objects.create(
             bill=bill,
@@ -425,6 +425,7 @@ class PartialCollectRequestDetailAPIView(APIView):
         pcr.collect_amount = amount
         pcr.collect_label  = f"Partial Collection for {pcr.bill.bill_type} #{orig_no}"
         pcr.save()
+        pcr.bill.refresh_from_db()
         return Response(BillSerializer(pcr.bill).data)
 
     def delete(self, request, pk):
@@ -479,9 +480,7 @@ class PartialCollectExecuteAPIView(APIView):
                 status=400,
             )
 
-        label = (pcr.collect_label or "Partial collection") + " via " + {
-            "CASH": "Cash", "UPI": "UPI", "ONLINE": "Online",
-        }.get(paid_via, paid_via.capitalize())
+        label = pcr.collect_label or "Partial collection"
 
         # ── 1. Audit line item (negative, for display) ────────────────────────
         bill.line_items = list(bill.line_items) + [{
