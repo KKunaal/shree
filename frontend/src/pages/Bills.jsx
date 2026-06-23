@@ -4,6 +4,7 @@ import { createApiClient } from '../api'
 import Header from '../components/Header'
 import BillCard from '../components/BillCard'
 import CreateBillModal from '../components/CreateBillModal'
+import { useUrlState } from '../hooks/useUrlState'
 
 const PAGE_SIZE = 10
 const SEARCH_DEBOUNCE_MS = 5000 // 5 s after typing stops
@@ -23,16 +24,39 @@ export default function Bills({ onTabChange }) {
   const [collectPartialBill, setCollectPartialBill] = useState(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [filters, setFilters] = useState({
-    billType: 'ALL',
-    paymentStatus: 'UNPAID', // default to unpaid bills
-    dateMode: 'NONE',
-    date: '',
-    dateFrom: '',
-    dateTo: '',
-  })
+
+  // ── Filter state — persisted in URL params ────────────────────────────────
+  const [billType,       setBillType]       = useUrlState('billType',    'ALL')
+  const [paymentStatus,  setPaymentStatus]  = useUrlState('payment',     'UNPAID')
+  const [dateMode,       setDateMode]       = useUrlState('dateMode',    'NONE')
+  const [dateParam,      setDateParam]      = useUrlState('date',        '')
+  const [dateFrom,       setDateFrom]       = useUrlState('dateFrom',    '')
+  const [dateTo,         setDateTo]         = useUrlState('dateTo',      '')
+  const [page,           setPage]           = useUrlState('page',        '1')
+
+  // Compose into the shape the rest of the component expects
+  const filters = useMemo(() => ({
+    billType,
+    paymentStatus,
+    dateMode,
+    date:     dateParam,
+    dateFrom,
+    dateTo,
+  }), [billType, paymentStatus, dateMode, dateParam, dateFrom, dateTo])
+
+  const setFilters = useCallback((valOrFn) => {
+    const next = typeof valOrFn === 'function' ? valOrFn(filters) : valOrFn
+    setBillType(next.billType)
+    setPaymentStatus(next.paymentStatus)
+    setDateMode(next.dateMode)
+    setDateParam(next.date)
+    setDateFrom(next.dateFrom)
+    setDateTo(next.dateTo)
+  }, [filters, setBillType, setPaymentStatus, setDateMode, setDateParam, setDateFrom, setDateTo]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pageNum = parseInt(page, 10) || 1
+
   const [showFilterPanel, setShowFilterPanel] = useState(false)
-  const [page, setPage] = useState(1)
   const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
 
@@ -48,13 +72,13 @@ export default function Bills({ onTabChange }) {
   }, [search])
 
   // ── Reset to page 1 whenever the effective search or filters change ────────
-  useEffect(() => { setPage(1) }, [debouncedSearch, filters])
+  useEffect(() => { setPage('1') }, [debouncedSearch, filters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Fetch from server whenever page / debouncedSearch / filters / refreshTick change ─
   const fetchBills = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({ page })
+      const params = new URLSearchParams({ page: pageNum })
       if (debouncedSearch) params.set('search', debouncedSearch)
       if (filters.billType !== 'ALL') params.set('bill_type', filters.billType)
       if (filters.paymentStatus !== 'ALL') params.set('payment_status', filters.paymentStatus)
@@ -72,7 +96,7 @@ export default function Bills({ onTabChange }) {
     } finally {
       setLoading(false)
     }
-  }, [apiClient, logout, page, debouncedSearch, filters, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [apiClient, logout, pageNum, debouncedSearch, filters, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchBills() }, [fetchBills])
 
@@ -113,12 +137,12 @@ export default function Bills({ onTabChange }) {
 
   // ── Derived pagination ─────────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
+  const safePage = Math.min(pageNum, totalPages)
 
   // ── Event handlers ─────────────────────────────────────────────────────────
   const handleBillCreated = (newBill) => {
     // Jump back to page 1 with cleared search so the new bill is visible
-    setPage(1)
+    setPage('1')
     setSearch('')
     setDebouncedSearch('')
     setRefreshTick((t) => t + 1)
@@ -136,8 +160,8 @@ export default function Bills({ onTabChange }) {
     try {
       await apiClient.delete(`/bills/${bill.id}/`)
       // If we just deleted the last row on a page > 1, step back a page
-      if (results.length === 1 && page > 1) {
-        setPage((p) => p - 1)
+      if (results.length === 1 && pageNum > 1) {
+        setPage(String(pageNum - 1))
       } else {
         setRefreshTick((t) => t + 1)
       }
@@ -461,7 +485,7 @@ export default function Bills({ onTabChange }) {
           <div className="flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3">
             {/* Prev */}
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage(String(Math.max(1, pageNum - 1)))}
               disabled={safePage === 1}
               className="flex items-center gap-1.5 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:text-blue-700 transition"
             >
@@ -479,7 +503,7 @@ export default function Bills({ onTabChange }) {
                     {showEllipsisAfter && <span className="px-1 text-gray-400 text-xs">…</span>}
                     {show && (
                       <button
-                        onClick={() => setPage(p)}
+                        onClick={() => setPage(String(p))}
                         className={`w-8 h-8 text-sm rounded-lg font-medium transition
                           ${p === safePage
                             ? 'bg-blue-700 text-white'
@@ -497,7 +521,7 @@ export default function Bills({ onTabChange }) {
 
             {/* Next */}
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage(String(Math.min(totalPages, pageNum + 1)))}
               disabled={safePage === totalPages}
               className="flex items-center gap-1.5 text-sm font-medium text-gray-600 disabled:text-gray-300 disabled:cursor-not-allowed hover:text-blue-700 transition"
             >
@@ -566,7 +590,7 @@ export default function Bills({ onTabChange }) {
       {showFilterPanel && (
         <FilterPanel
           filters={filters}
-          onApply={(f) => { setFilters(f); setPage(1) }}
+          onApply={(f) => { setFilters(f); setPage('1') }}
           onClose={() => setShowFilterPanel(false)}
         />
       )}

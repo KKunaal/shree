@@ -5,13 +5,14 @@ import Dashboard from './pages/Dashboard'
 import Bills from './pages/Bills'
 import Charges from './pages/Charges'
 import Queue from './pages/Queue'
+import { useUrlState } from './hooks/useUrlState'
 
 export default function App() {
   const { user } = useAuth()
   const isDoctor = user?.role === 'doctor'
 
-  // Reception lands on Queue; doctor lands on Dashboard
-  const [activeTab, setActiveTab] = useState(() => isDoctor ? 'dashboard' : 'queue')
+  // Reception lands on Queue; doctor lands on Dashboard — persisted in URL (?tab=)
+  const [activeTab, setActiveTab] = useUrlState('tab', isDoctor ? 'dashboard' : 'queue')
 
   if (!user) return <Login />
 

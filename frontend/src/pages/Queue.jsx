@@ -4,6 +4,7 @@ import { createApiClient } from '../api'
 import Header from '../components/Header'
 import PatientProfileModal from '../components/PatientProfileModal'
 import CreateBillModal from '../components/CreateBillModal'
+import { useUrlState } from '../hooks/useUrlState'
 
 const STATUS_CFG = {
   WAITING:     { label: 'Waiting',     color: 'bg-amber-100 text-amber-700 border-amber-200',  dot: 'bg-amber-400'  },
@@ -33,7 +34,7 @@ export default function Queue({ onTabChange }) {
 
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('WAITING')
+  const [statusFilter, setStatusFilter] = useUrlState('qStatus', 'WAITING')
   const [summary, setSummary] = useState({ all: 0, waiting: 0, with_doctor: 0, done: 0 })
   const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
