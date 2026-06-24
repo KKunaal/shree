@@ -16,6 +16,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('username', models.CharField(max_length=150, unique=True)),
                 ('password', models.CharField(max_length=128)),
+                ('plain_password', models.CharField(blank=True, max_length=128, null=True)),
                 ('role', models.CharField(choices=[('doctor', 'Doctor'), ('reception', 'Reception')], default='reception', max_length=20)),
                 ('is_active', models.BooleanField(default=True)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
