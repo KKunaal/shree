@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { createApiClient } from '../api'
 import Header from '../components/Header'
@@ -35,6 +35,7 @@ export default function Charges({ onTabChange }) {
   const [editRate, setEditRate] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [toast, setToast] = useState(null)
+  const activeTabRef = useRef(null)
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -54,6 +55,20 @@ export default function Charges({ onTabChange }) {
   }, [apiClient, logout])
 
   useEffect(() => { fetchRates() }, [fetchRates])
+
+  // Scroll active tab into view only on mobile screens
+  useEffect(() => {
+    const isMobileView = window.innerWidth < 640
+    if (isMobileView && activeTabRef.current) {
+      setTimeout(() => {
+        activeTabRef.current?.scrollIntoView({
+          behavior: 'auto',
+          block: 'nearest',
+          inline: 'end' // Charges is near the end, scroll to end
+        })
+      }, 100)
+    }
+  }, [])
 
   const filtered = rates.filter((r) => {
     const matchCat = categoryFilter === 'ALL' || r.category === categoryFilter
@@ -100,7 +115,7 @@ export default function Charges({ onTabChange }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header />
+      <Header onNavigateToUserManagement={() => onTabChange('usermanagement')} />
 
       {/* Toast */}
       {toast && (
@@ -112,33 +127,37 @@ export default function Charges({ onTabChange }) {
 
       {/* Sticky tab bar */}
       <div className="bg-white border-b sticky top-[60px] z-30">
-        <div className="max-w-2xl mx-auto flex">
-          <button
-            onClick={() => onTabChange('dashboard')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            📊 Dashboard
-          </button>
-          <button
-            onClick={() => onTabChange('bills')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            📋 Bills
-          </button>
-          <button
-            onClick={() => onTabChange('queue')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            🏥 Queue
-          </button>
-          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
-            ⚙️ Charges
-            {rates.length > 0 && (
-              <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
-                {rates.length}
-              </span>
-            )}
-          </button>
+        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+          <div className="flex min-w-max">
+            <button
+              onClick={() => onTabChange('dashboard')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              📊 Dashboard
+            </button>
+            <button
+              onClick={() => onTabChange('bills')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              📋 Bills
+            </button>
+            <button
+              onClick={() => onTabChange('queue')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              🏥 Queue
+            </button>
+            <button 
+              ref={activeTabRef}
+              className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700 whitespace-nowrap">
+              ⚙️ Charges
+              {rates.length > 0 && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
+                  {rates.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

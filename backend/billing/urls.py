@@ -5,6 +5,7 @@ from .views import (
     BillDetailAPIView,
     BillListCreateAPIView,
     BillPaymentAPIView,
+    ChangePasswordAPIView,
     MetricsAPIView,
     MetricsRefreshAPIView,
     PartialCollectExecuteAPIView,
@@ -17,6 +18,8 @@ from .views import (
     QueueMoveUpAPIView,
     ServiceRateDetailAPIView,
     ServiceRateListCreateAPIView,
+    UserDetailAPIView,
+    UserListCreateAPIView,
 )
 
 urlpatterns = [
@@ -42,4 +45,8 @@ urlpatterns = [
     path("queue/<int:pk>/", QueueDetailAPIView.as_view(), name="queue-detail"),
     path("queue/<int:pk>/move-up/",   QueueMoveUpAPIView.as_view(),   name="queue-move-up"),
     path("queue/<int:pk>/move-down/", QueueMoveDownAPIView.as_view(), name="queue-move-down"),
+    # ── User Management ───────────────────────────────────────────────────────
+    path("users/", UserListCreateAPIView.as_view(), name="user-list-create"),
+    path("users/<int:pk>/", UserDetailAPIView.as_view(), name="user-detail"),
+    path("users/change-password/", ChangePasswordAPIView.as_view(), name="change-password"),
 ]

@@ -2,18 +2,24 @@ from decimal import Decimal
 
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .authentication import FixedBasicAuthentication
-from .models import Bill, Metrics, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate
+from .models import Bill, Metrics, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate, User
 from .serializers import (
     BillSerializer,
+    ChangePasswordSerializer,
     PartialCollectRequestSerializer,
-    PatientBasicProfileSerializer, QueueSerializer, ServiceRateSerializer,
+    PatientBasicProfileSerializer,
+    QueueSerializer,
+    ServiceRateSerializer,
+    UserCreateSerializer,
+    UserSerializer,
+    UserUpdateSerializer,
 )
 
 _auth = {
@@ -796,3 +802,92 @@ class QueueMoveDownAPIView(APIView):
             "displaced": QueueSerializer(nxt).data,
         })
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User Management Views
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class UserListCreateAPIView(generics.ListCreateAPIView):
+    """
+    GET  /api/users/     → List all users (doctor only)
+    POST /api/users/     → Create a new user (doctor only)
+    """
+    queryset = User.objects.all()
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated, IsDoctor]
+    
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return UserCreateSerializer
+        return UserSerializer
+
+
+class UserDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    GET    /api/users/<id>/   → Get user details (doctor only)
+    PATCH  /api/users/<id>/   → Update user (doctor only, cannot edit other doctors)
+    DELETE /api/users/<id>/   → Delete user (doctor only, cannot delete self or other doctors)
+    """
+    queryset = User.objects.all()
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated, IsDoctor]
+    
+    def get_serializer_class(self):
+        if self.request.method in ["PATCH", "PUT"]:
+            return UserUpdateSerializer
+        return UserSerializer
+    
+    def perform_update(self, serializer):
+        # Prevent doctors from editing other doctors
+        if serializer.instance.role == "doctor" and serializer.instance.username != self.request.user.username:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You cannot edit another doctor's account.")
+        serializer.save()
+    
+    def perform_destroy(self, instance):
+        # Prevent users from deleting themselves
+        if instance.username == self.request.user.username:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You cannot delete your own account.")
+        
+        # Prevent doctors from deleting other doctors
+        if instance.role == "doctor":
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("You cannot delete another doctor's account.")
+        
+        instance.delete()
+
+
+class ChangePasswordAPIView(APIView):
+    """
+    POST /api/users/change-password/
+    
+    Body (changing own password):
+    {
+        "current_password": "oldpass",
+        "new_password": "newpass"
+    }
+    
+    Body (doctor changing another user's password):
+    {
+        "user_id": 2,
+        "current_password": "oldpass",
+        "new_password": "newpass"
+    }
+    """
+    authentication_classes = [FixedBasicAuthentication]
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={"request": request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Password changed successfully."},
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

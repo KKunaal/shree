@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.contrib.auth.hashers import make_password, check_password
 from django.db import models
 from django.utils import timezone
 
@@ -375,3 +376,41 @@ class Queue(models.Model):
             max_no=models.Max("queue_number")
         )
         return (result["max_no"] or 0) + 1
+
+
+class User(models.Model):
+    """
+    Custom user model for managing doctors and reception staff.
+    Uses Django's password hashing for secure password storage.
+    """
+    
+    class Role(models.TextChoices):
+        DOCTOR = "doctor", "Doctor"
+        RECEPTION = "reception", "Reception"
+    
+    username = models.CharField(max_length=150, unique=True)
+    password = models.CharField(max_length=128)  # Stores hashed password
+    plain_password = models.CharField(max_length=128, blank=True, null=True)  # Stores plain text password for display
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.RECEPTION
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ["username"]
+    
+    def __str__(self):
+        return f"{self.username} ({self.role})"
+    
+    def set_password(self, raw_password):
+        """Hash and set the password."""
+        self.password = make_password(raw_password)
+        self.plain_password = raw_password  # Store plain text for display
+    
+    def check_password(self, raw_password):
+        """Verify the password."""
+        return check_password(raw_password, self.password)

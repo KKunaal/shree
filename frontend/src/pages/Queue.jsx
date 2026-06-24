@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { createApiClient } from '../api'
 import Header from '../components/Header'
@@ -38,6 +38,7 @@ export default function Queue({ onTabChange }) {
   const [summary, setSummary] = useState({ all: 0, waiting: 0, with_doctor: 0, done: 0 })
   const [refreshTick, setRefreshTick] = useState(0)
   const [toast, setToast] = useState(null)
+  const activeTabRef = useRef(null)
 
   // Modals
   const [showPatientModal, setShowPatientModal] = useState(false)
@@ -74,6 +75,20 @@ export default function Queue({ onTabChange }) {
   }, [apiClient, logout, statusFilter, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchQueue() }, [fetchQueue])
+
+  // Scroll active tab into view only on mobile screens where it might be hidden
+  useEffect(() => {
+    const isMobileView = window.innerWidth < 640 // sm breakpoint
+    if (isMobileView && activeTabRef.current) {
+      setTimeout(() => {
+        activeTabRef.current?.scrollIntoView({
+          behavior: 'auto',
+          block: 'nearest',
+          inline: 'center' // Center is fine for Queue as it's in the middle
+        })
+      }, 100)
+    }
+  }, [])
 
   // Close menu on outside click
   useEffect(() => {
@@ -231,7 +246,7 @@ export default function Queue({ onTabChange }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header onRefresh={fetchQueue} />
+      <Header onRefresh={fetchQueue} onNavigateToUserManagement={() => onTabChange('usermanagement')} />
 
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-white text-xs font-medium rounded-xl px-4 py-2.5 shadow-lg whitespace-nowrap pointer-events-none select-none
@@ -242,32 +257,36 @@ export default function Queue({ onTabChange }) {
 
       {/* ── Top tab bar ── */}
       <div className="bg-white border-b sticky top-[60px] z-30">
-        <div className="max-w-2xl mx-auto flex">
-          {isDoctor && (
-            <button onClick={() => onTabChange('dashboard')}
-              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition">
-              📊 Dashboard
-            </button>
-          )}
-          <button onClick={() => onTabChange('bills')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition">
-            📋 Bills
-          </button>
-          {/* Queue — active */}
-          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
-            🏥 Queue
-            {summary.waiting > 0 && (
-              <span className="ml-2 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
-                {summary.waiting}
-              </span>
+        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+          <div className="flex min-w-max">
+            {isDoctor && (
+              <button onClick={() => onTabChange('dashboard')}
+                className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap">
+                📊 Dashboard
+              </button>
             )}
-          </button>
-          {isDoctor && (
-            <button onClick={() => onTabChange('charges')}
-              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition">
-              ⚙️ Charges
+            <button onClick={() => onTabChange('bills')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap">
+              📋 Bills
             </button>
-          )}
+            {/* Queue — active */}
+            <button 
+              ref={activeTabRef}
+              className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700 whitespace-nowrap">
+              🏥 Queue
+              {summary.waiting > 0 && (
+                <span className="ml-2 text-xs bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
+                  {summary.waiting}
+                </span>
+              )}
+            </button>
+            {isDoctor && (
+              <button onClick={() => onTabChange('charges')}
+                className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap">
+                ⚙️ Charges
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

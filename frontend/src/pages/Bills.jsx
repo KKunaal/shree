@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { createApiClient } from '../api'
 import Header from '../components/Header'
@@ -24,6 +24,7 @@ export default function Bills({ onTabChange }) {
   const [collectPartialBill, setCollectPartialBill] = useState(null)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const activeTabRef = useRef(null)
 
   // ── Filter state — persisted in URL params ────────────────────────────────
   const [billType,       setBillType]       = useUrlState('billType',    'ALL')
@@ -99,6 +100,20 @@ export default function Bills({ onTabChange }) {
   }, [apiClient, logout, pageNum, debouncedSearch, filters, refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchBills() }, [fetchBills])
+
+  // Scroll active tab into view only on mobile screens
+  useEffect(() => {
+    const isMobileView = window.innerWidth < 640
+    if (isMobileView && activeTabRef.current) {
+      setTimeout(() => {
+        activeTabRef.current?.scrollIntoView({
+          behavior: 'auto',
+          block: 'nearest',
+          inline: 'start' // Bills is first/second, scroll to start
+        })
+      }, 100)
+    }
+  }, [])
 
   // ── Quick-filter derived value (maps filters → a single dropdown label) ───
   const quickFilterValue = useMemo(() => {
@@ -317,7 +332,7 @@ export default function Bills({ onTabChange }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header onRefresh={fetchBills} />
+      <Header onRefresh={fetchBills} onNavigateToUserManagement={() => onTabChange('usermanagement')} />
 
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 text-white text-xs font-medium rounded-xl px-4 py-2.5 shadow-lg whitespace-nowrap pointer-events-none select-none
@@ -328,37 +343,41 @@ export default function Bills({ onTabChange }) {
 
       {/* Tab bar */}
       <div className="bg-white border-b sticky top-[60px] z-30">
-        <div className="max-w-2xl mx-auto flex">
-          {isDoctor && (
-            <button
-              onClick={() => onTabChange('dashboard')}
-              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-            >
-              📊 Dashboard
-            </button>
-          )}
-          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
-            📋 Bills
-            {(summary.ipd + summary.opd) > 0 && (
-              <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
-                {summary.ipd + summary.opd}
-              </span>
+        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+          <div className="flex min-w-max">
+            {isDoctor && (
+              <button
+                onClick={() => onTabChange('dashboard')}
+                className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+              >
+                📊 Dashboard
+              </button>
             )}
-          </button>
-          <button
-            onClick={() => onTabChange('queue')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            🏥 Queue
-          </button>
-          {isDoctor && (
-            <button
-              onClick={() => onTabChange('charges')}
-              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-            >
-              ⚙️ Charges
+            <button 
+              ref={activeTabRef}
+              className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700 whitespace-nowrap">
+              📋 Bills
+              {(summary.ipd + summary.opd) > 0 && (
+                <span className="ml-2 text-xs bg-blue-100 text-blue-600 rounded-full px-2 py-0.5">
+                  {summary.ipd + summary.opd}
+                </span>
+              )}
             </button>
-          )}
+            <button
+              onClick={() => onTabChange('queue')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              🏥 Queue
+            </button>
+            {isDoctor && (
+              <button
+                onClick={() => onTabChange('charges')}
+                className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+              >
+                ⚙️ Charges
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

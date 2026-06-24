@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { createApiClient } from '../api'
 import Header from '../components/Header'
@@ -10,6 +10,7 @@ export default function Dashboard({ onTabChange }) {
   const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const activeTabRef = useRef(null)
 
   // refresh-button state
   const [refreshing, setRefreshing] = useState(false)
@@ -30,6 +31,20 @@ export default function Dashboard({ onTabChange }) {
   }, [apiClient, logout])
 
   useEffect(() => { fetchMetrics() }, [fetchMetrics])
+
+  // Scroll active tab into view only on mobile screens
+  useEffect(() => {
+    const isMobileView = window.innerWidth < 640
+    if (isMobileView && activeTabRef.current) {
+      setTimeout(() => {
+        activeTabRef.current?.scrollIntoView({
+          behavior: 'auto',
+          block: 'nearest',
+          inline: 'start' // Dashboard is first, scroll to start
+        })
+      }, 100)
+    }
+  }, [])
 
   const handleRefresh = async () => {
     if (refreshing) return
@@ -57,33 +72,37 @@ export default function Dashboard({ onTabChange }) {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      <Header onRefresh={fetchMetrics} />
+      <Header onRefresh={fetchMetrics} onNavigateToUserManagement={() => onTabChange('usermanagement')} />
 
       {/* Tab bar */}
       <div className="bg-white border-b sticky top-[60px] z-30">
-        <div className="max-w-2xl mx-auto flex">
-          {/* Dashboard — active */}
-          <button className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700">
-            📊 Dashboard
-          </button>
-          <button
-            onClick={() => onTabChange('bills')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            📋 Bills
-          </button>
-          <button
-            onClick={() => onTabChange('queue')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            🏥 Queue
-          </button>
-          <button
-            onClick={() => onTabChange('charges')}
-            className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition"
-          >
-            ⚙️ Charges
-          </button>
+        <div className="max-w-2xl mx-auto overflow-x-auto no-scrollbar">
+          <div className="flex min-w-max">
+            {/* Dashboard — active */}
+            <button 
+              ref={activeTabRef}
+              className="px-4 py-3 text-sm font-semibold text-blue-700 border-b-2 border-blue-700 whitespace-nowrap">
+              📊 Dashboard
+            </button>
+            <button
+              onClick={() => onTabChange('bills')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              📋 Bills
+            </button>
+            <button
+              onClick={() => onTabChange('queue')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              🏥 Queue
+            </button>
+            <button
+              onClick={() => onTabChange('charges')}
+              className="px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 transition whitespace-nowrap"
+            >
+              ⚙️ Charges
+            </button>
+          </div>
         </div>
       </div>
 

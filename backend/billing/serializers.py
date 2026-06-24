@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Max
 from rest_framework import serializers
 
-from .models import Bill, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate
+from .models import Bill, PatientBasicProfile, PartialCollectRequest, Queue, ServiceRate, User
 from .services import GoogleSheetsService
 
 
@@ -258,3 +258,140 @@ class QueueSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ("queue_number", "date", "created_at", "updated_at")
+
+
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for listing users (no password field)."""
+    
+    class Meta:
+        model = User
+        fields = ["id", "username", "role", "is_active", "plain_password", "created_at", "updated_at"]
+        read_only_fields = ("created_at", "updated_at")
+
+
+class UserCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating a new user with password."""
+    password = serializers.CharField(write_only=True, min_length=4)
+    
+    class Meta:
+        model = User
+        fields = ["id", "username", "password", "role", "is_active"]
+    
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+
+class UserUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating user info, optionally with password. Role cannot be changed after creation."""
+    password = serializers.CharField(write_only=True, min_length=4, required=False, allow_blank=True)
+    current_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    class Meta:
+        model = User
+        fields = ["username", "is_active", "password", "current_password"]
+        # Note: role is excluded - cannot be changed after user creation
+    
+    def validate_username(self, value):
+        # Check if username is being changed and if it's unique
+        if self.instance and value != self.instance.username:
+            # Check if user is trying to change their own username
+            request = self.context.get("request")
+            if request and self.instance.username == request.user.username:
+                raise serializers.ValidationError("You cannot change your own username.")
+            
+            # Check if new username already exists
+            if User.objects.filter(username=value).exists():
+                raise serializers.ValidationError("A user with that username already exists.")
+        return value
+    
+    def validate(self, data):
+        """Validate that current password is provided when user changes their own password."""
+        request = self.context.get("request")
+        password = data.get("password")
+        current_password = data.get("current_password")
+        is_active = data.get("is_active")
+        
+        # Check if editing self
+        is_self = self.instance and request and self.instance.username == request.user.username
+        
+        if is_self:
+            # Prevent users from deactivating themselves
+            if is_active is not None and not is_active:
+                raise serializers.ValidationError({
+                    "is_active": "You cannot deactivate your own account."
+                })
+        
+        # If user is changing their own password, current password is required
+        if password and self.instance and request:
+            is_self = self.instance.username == request.user.username
+            if is_self:
+                if not current_password:
+                    raise serializers.ValidationError({
+                        "current_password": "Current password is required when changing your own password."
+                    })
+                # Verify current password is correct
+                if not self.instance.check_password(current_password):
+                    raise serializers.ValidationError({
+                        "current_password": "Current password is incorrect."
+                    })
+        
+        return data
+    
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        validated_data.pop("current_password", None)  # Remove current_password, it was only for validation
+        
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        # Update password if provided
+        if password:
+            instance.set_password(password)
+        
+        instance.save()
+        return instance
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Serializer for changing user password."""
+    user_id = serializers.IntegerField(required=False)
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=4)
+    
+    def validate(self, data):
+        request = self.context.get("request")
+        user_id = data.get("user_id")
+        
+        # If user_id is provided, doctor is changing another user's password
+        if user_id:
+            if request.user.role != "doctor":
+                raise serializers.ValidationError("Only doctors can change other users' passwords.")
+            try:
+                target_user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                raise serializers.ValidationError("User not found.")
+            
+            # Prevent doctors from changing other doctors' passwords
+            if target_user.role == "doctor" and target_user.username != request.user.username:
+                raise serializers.ValidationError("You cannot change another doctor's password.")
+        else:
+            # Changing own password
+            target_user = User.objects.get(username=request.user.username)
+        
+        # Verify current password
+        if not target_user.check_password(data["current_password"]):
+            raise serializers.ValidationError("Current password is incorrect.")
+        
+        data["target_user"] = target_user
+        return data
+    
+    def save(self):
+        target_user = self.validated_data["target_user"]
+        target_user.set_password(self.validated_data["new_password"])
+        target_user.save()
+        return target_user
