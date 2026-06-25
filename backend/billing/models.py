@@ -43,38 +43,17 @@ class Bill(models.Model):
         IPD = "IPD", "In-Patient (IPD)"
         OPD = "OPD", "Out-Patient (OPD)"
 
+    # ── Patient Reference ─────────────────────────────────────────────────────
+    # Links to PatientBasicProfile as single source of truth for patient data.
+    patient = models.ForeignKey(
+        'PatientBasicProfile',  # Forward reference since PatientBasicProfile is defined later
+        on_delete=models.PROTECT,  # Prevent profile deletion if bills exist
+        related_name='bills',
+        help_text="Patient profile (source of truth for patient demographics)",
+    )
+
     bill_type = models.CharField(
         max_length=3, choices=BillType.choices, default=BillType.IPD, db_index=True
-    )
-    patient_name = models.CharField(max_length=200)
-    address = models.TextField(blank=True)
-    mobile_no = models.CharField(max_length=15, blank=True)
-
-    class Gender(models.TextChoices):
-        MALE   = "M", "Male"
-        FEMALE = "F", "Female"
-        OTHER  = "O", "Other"
-
-    gender = models.CharField(
-        max_length=1, choices=Gender.choices, blank=True, default=""
-    )
-    weight = models.DecimalField(
-        max_digits=5, decimal_places=1,
-        null=True, blank=True,
-        help_text="Patient weight in kg",
-    )
-    height = models.DecimalField(
-        max_digits=5, decimal_places=1,
-        null=True, blank=True,
-        help_text="Patient height in cm",
-    )
-    age = models.PositiveSmallIntegerField(
-        null=True, blank=True,
-        help_text="Patient age in years",
-    )
-    pulse_rate = models.PositiveSmallIntegerField(
-        null=True, blank=True,
-        help_text="Patient pulse rate in bpm",
     )
 
     # ── IPD-specific ──────────────────────────────────────────────────────────
@@ -148,8 +127,8 @@ class Bill(models.Model):
 
     def __str__(self) -> str:
         if self.bill_type == "OPD":
-            return f"{self.patient_name} (OPD #{self.opd_no})"
-        return f"{self.patient_name} (IPD #{self.ipd_no})"
+            return f"{self.patient.patient_name} (OPD #{self.opd_no})"
+        return f"{self.patient.patient_name} (IPD #{self.ipd_no})"
 
 
 class PartialCollectRequest(models.Model):

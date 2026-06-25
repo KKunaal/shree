@@ -35,6 +35,26 @@ class PartialCollectRequestSerializer(serializers.ModelSerializer):
 class BillSerializer(serializers.ModelSerializer):
     line_items = BillLineItemSerializer(many=True)
     partial_collect_requests = PartialCollectRequestSerializer(many=True, read_only=True)
+    
+    # Virtual fields that read from patient FK but maintain API compatibility
+    patient_name = serializers.CharField(source='patient.patient_name', read_only=True)
+    address = serializers.CharField(source='patient.address', read_only=True)
+    mobile_no = serializers.CharField(source='patient.mobile_no', read_only=True)
+    gender = serializers.CharField(source='patient.gender', read_only=True)
+    weight = serializers.DecimalField(source='patient.weight', read_only=True, max_digits=5, decimal_places=1)
+    height = serializers.DecimalField(source='patient.height', read_only=True, max_digits=5, decimal_places=1)
+    age = serializers.IntegerField(source='patient.age', read_only=True)
+    pulse_rate = serializers.IntegerField(source='patient.pulse_rate', read_only=True)
+    
+    # Write-only fields for accepting patient data on create/update
+    patient_name_input = serializers.CharField(write_only=True, required=False)
+    address_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    mobile_no_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    gender_input = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    weight_input = serializers.DecimalField(write_only=True, required=False, allow_null=True, max_digits=5, decimal_places=1)
+    height_input = serializers.DecimalField(write_only=True, required=False, allow_null=True, max_digits=5, decimal_places=1)
+    age_input = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    pulse_rate_input = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
     class Meta:
         model = Bill
@@ -44,8 +64,11 @@ class BillSerializer(serializers.ModelSerializer):
             "ipd_no", "admitted_on", "discharged_on", "room_no", "ward", "total_stay",
             # OPD
             "opd_no", "visit_date",
-            # Shared patient info
+            # Shared patient info (read from patient FK)
             "patient_name", "address", "mobile_no", "gender", "weight", "height", "age", "pulse_rate",
+            # Patient input fields (write-only)
+            "patient_name_input", "address_input", "mobile_no_input", "gender_input",
+            "weight_input", "height_input", "age_input", "pulse_rate_input",
             "line_items",
             "total_bill", "advance_paid", "advance_paid_via", "discount", "discount_note", "net_bill",
             "partially_collected", "total_partially_collected",
@@ -140,6 +163,32 @@ class BillSerializer(serializers.ModelSerializer):
     # ── Write operations ──────────────────────────────────────────────────────
 
     def create(self, validated_data):
+        # Extract patient data from _input fields
+        patient_data = {}
+        for field in ['patient_name', 'address', 'mobile_no', 'gender', 'weight', 'height', 'age', 'pulse_rate']:
+            input_field = f'{field}_input'
+            if input_field in validated_data:
+                patient_data[field] = validated_data.pop(input_field)
+        
+        # Get or create patient profile
+        patient = None
+        if patient_data.get('patient_name'):
+            # Try to find existing patient by name + mobile
+            if patient_data.get('mobile_no'):
+                patient = PatientBasicProfile.objects.filter(
+                    patient_name__iexact=patient_data['patient_name'],
+                    mobile_no=patient_data['mobile_no']
+                ).first()
+            
+            # If not found, create new profile
+            if not patient:
+                patient = PatientBasicProfile.objects.create(**patient_data)
+        
+        if not patient:
+            raise serializers.ValidationError({"patient_name_input": "Patient name is required"})
+        
+        validated_data['patient'] = patient
+        
         line_items = validated_data.pop("line_items", [])
         normalized_items, total_bill = self._compute_line_items(line_items)
         advance = Decimal(validated_data.get("advance_paid", Decimal("0.00")))

@@ -167,7 +167,7 @@ class BillListCreateAPIView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         from datetime import date as _date
-        qs = Bill.objects.all().order_by("-created_at")
+        qs = Bill.objects.select_related('patient').all().order_by("-created_at")
 
         bill_type = self.request.query_params.get("bill_type", "").upper()
         if bill_type in ("IPD", "OPD"):
@@ -230,7 +230,7 @@ class BillDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     PATCH  /api/bills/<id>/  → partial update        (doctor + reception)
     DELETE /api/bills/<id>/  → delete bill           (doctor only)
     """
-    queryset = Bill.objects.all()
+    queryset = Bill.objects.select_related('patient').all()
     serializer_class = BillSerializer
     authentication_classes = [FixedBasicAuthentication]
     permission_classes = [IsAuthenticated]
