@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "billing",
+    "patient_profile",
 ]
 
 # ── Middleware ────────────────────────────────────────────────────────────────

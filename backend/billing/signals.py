@@ -25,7 +25,7 @@ from django.db.models import F
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from .models import Bill, Metrics
+from .models import Bill, Metrics, Queue
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -159,3 +159,44 @@ def _bill_post_delete(sender, instance, **kwargs):
     # rebuild() recounts ALL bills (handles count decrement) and recalculates
     # all revenue buckets, avoiding potential CHECK constraint violations.
     Metrics.rebuild()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Queue signals
+# ─────────────────────────────────────────────────────────────────────────────
+
+@receiver(pre_save, sender=Queue)
+def _queue_pre_save(sender, instance, **kwargs):
+    """Snapshot the old status so post_save can detect WITH_DOCTOR transitions."""
+    if instance.pk:
+        try:
+            instance._old_status = Queue.objects.values_list(
+                "status", flat=True
+            ).get(pk=instance.pk)
+        except Queue.DoesNotExist:
+            instance._old_status = None
+    else:
+        instance._old_status = None
+
+
+@receiver(post_save, sender=Queue)
+def _queue_post_save(sender, instance, created, **kwargs):
+    """
+    1. Auto-populate queue_item_id = pk for new rows.
+    2. Create a PatientVisit when the Queue entry transitions to WITH_DOCTOR.
+    """
+    # ── 1. queue_item_id auto-assign ──────────────────────────────────────────
+    if instance.queue_item_id is None:
+        Queue.objects.filter(pk=instance.pk).update(queue_item_id=instance.pk)
+        instance.queue_item_id = instance.pk
+
+    # ── 2. PatientVisit creation on WITH_DOCTOR transition ────────────────────
+    if instance.status == Queue.Status.WITH_DOCTOR:
+        old = getattr(instance, "_old_status", None)
+        if created or old != Queue.Status.WITH_DOCTOR:
+            # Lazy import to avoid circular import at module load time
+            from .models import PatientVisit  # noqa
+            PatientVisit.objects.get_or_create(
+                queue_item=instance,
+                defaults={"patient": instance.patient},
+            )

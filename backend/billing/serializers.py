@@ -56,6 +56,9 @@ class BillSerializer(serializers.ModelSerializer):
     age_input = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     pulse_rate_input = serializers.IntegerField(write_only=True, required=False, allow_null=True)
 
+    # Visit linkage (write-only: provided on bill create to link bill → PatientVisit)
+    visit_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+
     class Meta:
         model = Bill
         fields = [
@@ -69,6 +72,8 @@ class BillSerializer(serializers.ModelSerializer):
             # Patient input fields (write-only)
             "patient_name_input", "address_input", "mobile_no_input", "gender_input",
             "weight_input", "height_input", "age_input", "pulse_rate_input",
+            # Visit linkage (write-only)
+            "visit_id",
             "line_items",
             "total_bill", "advance_paid", "advance_paid_via", "discount", "discount_note", "net_bill",
             "partially_collected", "total_partially_collected",
@@ -163,6 +168,9 @@ class BillSerializer(serializers.ModelSerializer):
     # ── Write operations ──────────────────────────────────────────────────────
 
     def create(self, validated_data):
+        # Extract visit_id for linking after bill creation
+        visit_id = validated_data.pop("visit_id", None)
+
         # Extract patient data from _input fields
         patient_data = {}
         for field in ['patient_name', 'address', 'mobile_no', 'gender', 'weight', 'height', 'age', 'pulse_rate']:
@@ -211,6 +219,11 @@ class BillSerializer(serializers.ModelSerializer):
                 total_bill=total_bill,
                 net_bill=net_bill,
             )
+
+            # Link bill to visit if provided
+            if visit_id:
+                from .models import PatientVisit  # noqa
+                PatientVisit.objects.filter(visit_id=visit_id, bill__isnull=True).update(bill=bill)
 
             # Append to the correct Google Sheet
             try:
@@ -299,14 +312,14 @@ class QueueSerializer(serializers.ModelSerializer):
         model = Queue
         fields = [
             "id", "patient", "patient_id",
-            "queue_number", "status", "date",
+            "queue_number", "queue_item_id", "status", "date",
             "reception_bill_type",
             "reception_line_items",
             "reception_amount_collected",
             "reception_paid_via",
             "created_at", "updated_at",
         ]
-        read_only_fields = ("queue_number", "date", "created_at", "updated_at")
+        read_only_fields = ("queue_number", "queue_item_id", "date", "created_at", "updated_at")
 
 
 class UserSerializer(serializers.ModelSerializer):

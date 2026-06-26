@@ -297,6 +297,51 @@ class PatientBasicProfile(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Patient Observation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PatientObservation(models.Model):
+    observation_id = models.BigAutoField(primary_key=True)
+    patient = models.ForeignKey(
+        PatientBasicProfile,
+        on_delete=models.CASCADE,
+        related_name="observations",
+    )
+    observation = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Observation #{self.observation_id} – {self.patient.patient_name}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patient Prescription
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PatientPrescription(models.Model):
+    prescription_id = models.BigAutoField(primary_key=True)
+    patient = models.ForeignKey(
+        PatientBasicProfile,
+        on_delete=models.CASCADE,
+        related_name="prescriptions",
+    )
+    # Each item: {name: str, description: str}
+    items = models.JSONField(default=list, help_text="List of {name, description} prescription items")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Prescription #{self.prescription_id} – {self.patient.patient_name}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Queue
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -314,6 +359,8 @@ class Queue(models.Model):
     queue_number = models.PositiveIntegerField(
         help_text="Sequential number within the day",
     )
+    # Globally unique auto-assigned ID (equal to pk, set by post_save signal)
+    queue_item_id = models.BigIntegerField(unique=True, null=True, db_index=True)
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.WAITING
     )
@@ -355,6 +402,60 @@ class Queue(models.Model):
             max_no=models.Max("queue_number")
         )
         return (result["max_no"] or 0) + 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Patient Visit
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PatientVisit(models.Model):
+    """
+    One visit = one queue item encounter.
+    Created automatically when a Queue entry moves to WITH_DOCTOR state.
+    Optionally linked to an observation, prescription, and bill.
+    """
+    visit_id = models.BigAutoField(primary_key=True)
+    patient = models.ForeignKey(
+        PatientBasicProfile,
+        on_delete=models.CASCADE,
+        related_name="visits",
+    )
+    queue_item = models.OneToOneField(
+        Queue,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit",
+    )
+    observation = models.OneToOneField(
+        PatientObservation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit",
+    )
+    prescription = models.OneToOneField(
+        PatientPrescription,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit",
+    )
+    bill = models.OneToOneField(
+        Bill,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="visit",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Visit #{self.visit_id} – {self.patient.patient_name}"
 
 
 class User(models.Model):

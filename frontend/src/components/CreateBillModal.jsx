@@ -176,6 +176,8 @@ export default function CreateBillModal({ apiClient, isDoctor, onClose, onCreate
         height_input: form.height !== '' ? form.height : null,
         age_input:    form.age !== '' ? parseInt(form.age) : null,
         pulse_rate_input: form.pulse_rate !== '' ? parseInt(form.pulse_rate) : null,
+        // Link to visit if provided (from PatientProfilePage "Move to Done" flow)
+        ...(prefillData?._visit_id ? { visit_id: prefillData._visit_id } : {}),
         advance_paid: form.advance_paid,
         advance_paid_via: form.advance_paid_via,
         discount: form.discount !== '' ? form.discount : null,
